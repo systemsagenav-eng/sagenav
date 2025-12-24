@@ -114,15 +114,26 @@
             };
 
             const handleFile = (e, type) => {
-                const file = e.target.files[0];
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    if (type === 'prod') setNewItem({...newItem, img: reader.result});
-                    if (type === 'logo') setSettings({...settings, personalLogo: reader.result});
-                    if (type === 'bg') setSettings({...settings, bgImages: [...(settings.bgImages || []), reader.result]});
-                };
-                if (file) reader.readAsDataURL(file);
-            };
+    const file = e.target.files[0];
+    
+    // Si el archivo es mayor a 1MB, avisamos
+    if (file.size > 1024 * 1024) {
+        alert("⚠️ Esta imagen es muy pesada. Intenta con una imagen más pequeña (menos de 1MB) para que la nube pueda guardarla correctamente.");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        if (type === 'prod') setNewItem({...newItem, img: reader.result});
+        if (type === 'logo') setSettings({...settings, personalLogo: reader.result});
+        if (type === 'bg') {
+            // Añadimos la imagen y guardamos una copia del estado para asegurar el cambio
+            const updatedBg = [...(settings.bgImages || []), reader.result];
+            setSettings({...settings, bgImages: updatedBg});
+        }
+    };
+    if (file) reader.readAsDataURL(file);
+};
 
             // Gráficas
             useEffect(() => {
