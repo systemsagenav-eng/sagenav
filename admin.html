@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - System.Sagenav</title>
+    <title>Admin Pro - System.Sagenav</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -11,96 +11,265 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
+        .admin-card { background: white; border-radius: 2rem; padding: 2rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .tab-active { border-bottom: 4px solid #3b82f6; color: #3b82f6; font-weight: 900; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-slate-100">
+<body class="bg-slate-100 text-slate-900">
     <div id="root"></div>
-    <script type="text/babel">
-        const { useState, useEffect } = React;
 
-        // --- CONFIGURACIÓN DE SUPABASE (REEMPLAZA ESTO) ---
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- CONFIGURACIÓN DE SUPABASE ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
 
         function AdminApp() {
             const [authorized, setAuthorized] = useState(false);
+            const [adminTab, setAdminTab] = useState('billing');
+            const [loading, setLoading] = useState(true);
+
+            // Estados de Datos
             const [settings, setSettings] = useState(null);
             const [inventory, setInventory] = useState([]);
-            const [newProd, setNewProd] = useState({ name: "", price: "", img: "" });
+            const [sales, setSales] = useState([]);
 
+            // Estados de Formulario
+            const [newProd, setNewProd] = useState({ name: "", price: "", type: "Producto", stock: 1, img: "" });
+            const [billClient, setBillClient] = useState({ name: "", nit: "", date: new Date().toISOString().split('T')[0] });
+            const [billItems, setBillItems] = useState([]);
+            const [manualItem, setManualItem] = useState({ desc: "", price: "" });
+            
+            const chartRef = useRef(null);
+            const myChart = useRef(null);
+
+            // 1. Seguridad y Carga Inicial
             useEffect(() => {
                 const pass = prompt("Clave del Doctor:");
-                if (pass === "1234") setAuthorized(true);
-                else window.location.href = "index.html";
+                if (pass === "1234") {
+                    setAuthorized(true);
+                    fetchData();
+                } else {
+                    window.location.href = "index.html";
+                }
             }, []);
 
-            useEffect(() => {
-                if(authorized) {
-                    const load = async () => {
-                        const { data } = await supabaseClient.from('sagenav_data').select('*');
-                        if (data) {
-                            setSettings(data.find(d => d.key === 'settings').value);
-                            setInventory(data.find(d => d.key === 'inventory').value);
-                        }
-                    };
-                    load();
+            async function fetchData() {
+                const { data } = await supabaseClient.from('sagenav_data').select('*');
+                if (data) {
+                    setSettings(data.find(d => d.key === 'settings').value);
+                    setInventory(data.find(d => d.key === 'inventory').value);
+                    setSales(data.find(d => d.key === 'sales').value || []);
                 }
-            }, [authorized]);
+                setLoading(false);
+            }
 
-            const save = async () => {
+            // 2. Guardar en la Nube
+            const saveEverything = async () => {
                 const { error: e1 } = await supabaseClient.from('sagenav_data').update({ value: settings }).eq('key', 'settings');
                 const { error: e2 } = await supabaseClient.from('sagenav_data').update({ value: inventory }).eq('key', 'inventory');
-                if (!e1 && !e2) alert("✅ Nube Actualizada");
-                else alert("❌ Error al guardar");
+                const { error: e3 } = await supabaseClient.from('sagenav_data').update({ value: sales }).eq('key', 'sales');
+                
+                if (!e1 && !e2 && !e3) alert("✅ Nube Sincronizada Exitosamente");
+                else alert("❌ Error al guardar datos");
             };
 
-            const addProduct = () => {
-                setInventory([...inventory, {...newProd, id: Date.now()}]);
-                setNewProd({ name: "", price: "", img: "" });
+            // 3. Generar Cuenta de Cobro (PDF)
+            const generatePDF = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                // Encabezado
+                if (settings.personalLogo) doc.addImage(settings.personalLogo, 'PNG', 15, 10, 30, 30);
+                doc.setFont("helvetica", "bold").setFontSize(20).text("CUENTA DE COBRO", 105, 30, { align: "center" });
+                
+                // Datos Cliente
+                doc.setFontSize(10).setFont("helvetica", "normal");
+                doc.text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 50);
+                doc.text(`NIT/CC: ${billClient.nit}`, 15, 55);
+                doc.text(`FECHA: ${billClient.date}`, 15, 60);
+
+                const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
+                if (manualItem.desc) tableBody.push([1, manualItem.desc.toUpperCase(), `$${parseInt(manualItem.price).toLocaleString()}`, `$${parseInt(manualItem.price).toLocaleString()}`]);
+                
+                doc.autoTable({ startY: 70, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody });
+                
+                const finalY = doc.lastAutoTable.finalY + 10;
+                const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '')), 0);
+                doc.setFont("helvetica", "bold").text(`TOTAL A PAGAR: $${total.toLocaleString()}`, 15, finalY);
+
+                doc.save(`CTA_Sagenav_${billClient.name}.pdf`);
+                
+                // Registrar Venta
+                const newSale = { id: Date.now(), date: billClient.date, amount: total, concept: `Cobro: ${billClient.name}` };
+                setSales([newSale, ...sales]);
             };
 
-            if (!authorized || !settings) return <div className="p-20 text-center font-tech">ACCEDIENDO AL SISTEMA...</div>;
+            // 4. Lógica de Imágenes
+            const handleFile = (e, type) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    if (type === 'prod') setNewProd({...newProd, img: reader.result});
+                    if (type === 'logo') setSettings({...settings, personalLogo: reader.result});
+                    if (type === 'bg') setSettings({...settings, bgImages: [...(settings.bgImages || []), reader.result]});
+                };
+                if (file) reader.readAsDataURL(file);
+            };
+
+            // 5. Gráficas
+            useEffect(() => {
+                if (authorized && adminTab === 'reports' && chartRef.current) {
+                    if (myChart.current) myChart.current.destroy();
+                    const salesByDate = sales.slice(0, 7).reverse();
+                    myChart.current = new Chart(chartRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: salesByDate.map(s => s.date),
+                            datasets: [{ label: 'Ventas ($)', data: salesByDate.map(s => s.amount), backgroundColor: '#3b82f6' }]
+                        }
+                    });
+                }
+                if(authorized) setTimeout(() => lucide.createIcons(), 500);
+            }, [adminTab, sales, authorized]);
+
+            if (!authorized || loading) return <div className="p-20 text-center font-tech animate-pulse">AUTENTICANDO...</div>;
 
             return (
-                <div className="p-6 max-w-4xl mx-auto">
-                    <div className="flex justify-between items-center mb-10">
-                        <h2 className="text-2xl font-black font-tech italic">COMMAND CENTER</h2>
-                        <button onClick={save} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold">GUARDAR EN LA NUBE</button>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                        <div className="bg-white p-6 rounded-3xl shadow-md space-y-4">
-                            <h3 className="font-bold border-b pb-2">Ajustes Generales</h3>
-                            <input className="w-full p-2 border rounded" value={settings.heroTitle} onChange={e=>setSettings({...settings, heroTitle: e.target.value})} placeholder="Título" />
-                            <input className="w-full p-2 border rounded" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp: e.target.value})} placeholder="WhatsApp" />
-                        </div>
-
-                        <div className="bg-white p-6 rounded-3xl shadow-md space-y-4">
-                            <h3 className="font-bold border-b pb-2">Nuevo Servicio</h3>
-                            <input className="w-full p-2 border rounded" placeholder="Nombre" value={newProd.name} onChange={e=>setNewProd({...newProd, name: e.target.value})} />
-                            <input className="w-full p-2 border rounded" type="number" placeholder="Precio" value={newProd.price} onChange={e=>setNewProd({...newProd, price: parseInt(e.target.value)})} />
-                            <button onClick={addProduct} className="w-full bg-blue-600 text-white py-2 rounded-xl">Agregar localmente</button>
+                <div className="p-6 md:p-12 min-h-screen">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+                        <h2 className="text-3xl font-black font-tech italic uppercase tracking-tighter">Command Center</h2>
+                        <div className="flex gap-4">
+                            <a href="index.html" className="bg-slate-200 px-6 py-4 rounded-2xl font-bold text-xs">VISTA CLIENTE</a>
+                            <button onClick={saveEverything} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black text-xs shadow-lg">GUARDAR EN LA NUBE</button>
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                        {inventory.map(item => (
-                            <div key={item.id} className="bg-white p-4 rounded-xl border flex justify-between">
-                                <span>{item.name} - <b>${item.price}</b></span>
-                                <button onClick={()=>setInventory(inventory.filter(i=>i.id!==item.id))} className="text-red-500">Eliminar</button>
+                    <div className="flex gap-6 mb-10 border-b overflow-x-auto pb-2 no-scrollbar">
+                        <button onClick={()=>setAdminTab('billing')} className={`pb-2 uppercase text-[10px] font-bold tracking-widest ${adminTab==='billing'?'tab-active':''}`}>📄 Facturación</button>
+                        <button onClick={()=>setAdminTab('inventory')} className={`pb-2 uppercase text-[10px] font-bold tracking-widest ${adminTab==='inventory'?'tab-active':''}`}>📦 Inventario</button>
+                        <button onClick={()=>setAdminTab('reports')} className={`pb-2 uppercase text-[10px] font-bold tracking-widest ${adminTab==='reports'?'tab-active':''}`}>📊 Reportes</button>
+                        <button onClick={()=>setAdminTab('config')} className={`pb-2 uppercase text-[10px] font-bold tracking-widest ${adminTab==='config'?'tab-active':''}`}>⚙️ Ajustes</button>
+                    </div>
+
+                    {adminTab === 'billing' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
+                            <div className="admin-card space-y-4">
+                                <h3 className="font-black text-blue-600 uppercase text-[10px] tracking-widest border-b pb-2 italic">Datos de la Cuenta</h3>
+                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
+                                <input placeholder="NIT / Cédula" className="w-full p-3 border rounded-xl" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
+                                <select className="w-full p-3 border rounded-xl" onChange={e=>{
+                                    const it = inventory.find(i=>i.id == e.target.value);
+                                    if(it) setBillItems([...billItems, it]);
+                                }}>
+                                    <option value="">Añadir desde inventario...</option>
+                                    {inventory.map(i=><option key={i.id} value={i.id}>{i.name} (${i.price})</option>)}
+                                </select>
+                                <div className="flex gap-2">
+                                    <input placeholder="Descripción Manual" className="flex-grow p-3 border rounded-xl" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
+                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
+                                </div>
+                                <button onClick={generatePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-2">
+                                    <i data-lucide="printer" size={16}></i> GENERAR PDF Y REGISTRAR
+                                </button>
                             </div>
-                        ))}
-                    </div>
+                            <div className="admin-card">
+                                <h3 className="font-black text-emerald-600 uppercase text-[10px] tracking-widest border-b pb-2 italic">Resumen de Cobro</h3>
+                                <div className="mt-4 space-y-2">
+                                    {billItems.map((bi, idx)=>(
+                                        <div key={idx} className="flex justify-between text-xs font-bold border-b py-2 uppercase italic">
+                                            <span>{bi.name}</span>
+                                            <span>${bi.price.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                    {manualItem.desc && (
+                                        <div className="flex justify-between text-xs font-bold border-b py-2 text-blue-600">
+                                            <span>{manualItem.desc}</span>
+                                            <span>${parseInt(manualItem.price).toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {adminTab === 'inventory' && (
+                        <div className="admin-card animate-in fade-in">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <input placeholder="Nombre del Servicio" className="p-3 border rounded-xl" value={newProd.name} onChange={e=>setNewProd({...newProd, name:e.target.value})} />
+                                <input placeholder="Precio" type="number" className="p-3 border rounded-xl" value={newProd.price} onChange={e=>setNewProd({...newProd, price:parseInt(e.target.value)})} />
+                                <input type="file" onChange={e=>handleFile(e, 'prod')} className="p-2 text-xs" />
+                            </div>
+                            <button onClick={()=>{setInventory([...inventory, {...newProd, id:Date.now()}]); setNewProd({name:"", price:"", img:""})}} className="bg-blue-600 text-white px-10 py-3 rounded-xl font-bold uppercase text-xs mb-8">Añadir al Catálogo</button>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {inventory.map(item=>(
+                                    <div key={item.id} className="p-4 border rounded-2xl bg-slate-50 relative group">
+                                        <button onClick={()=>setInventory(inventory.filter(i=>i.id!==item.id))} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100 transition">×</button>
+                                        <p className="font-black text-[10px] uppercase truncate">{item.name}</p>
+                                        <p className="text-blue-600 font-bold">${item.price.toLocaleString()}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {adminTab === 'reports' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
+                            <div className="admin-card lg:col-span-2">
+                                <h3 className="font-black text-blue-600 uppercase text-[10px] tracking-widest border-b pb-2 mb-4">Últimas Ventas</h3>
+                                <canvas ref={chartRef}></canvas>
+                            </div>
+                            <div className="admin-card overflow-y-auto max-h-[400px]">
+                                {sales.map(s=>(
+                                    <div key={s.id} className="border-b py-3">
+                                        <p className="text-[10px] text-slate-400 font-bold">{s.date}</p>
+                                        <p className="text-xs font-black uppercase">{s.concept}</p>
+                                        <p className="text-emerald-600 font-bold">${s.amount.toLocaleString()}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {adminTab === 'config' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
+                            <div className="admin-card space-y-4">
+                                <h3 className="font-black text-blue-600 uppercase text-[10px] tracking-widest border-b pb-2">Identidad de Marca</h3>
+                                <input placeholder="Título de la Web" className="w-full p-3 border rounded-xl" value={settings.heroTitle} onChange={e=>setSettings({...settings, heroTitle:e.target.value})} />
+                                <input placeholder="WhatsApp (57...)" className="w-full p-3 border rounded-xl" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
+                                <div>
+                                    <label className="text-[10px] font-black opacity-50 uppercase">Logo para PDF:</label>
+                                    <input type="file" onChange={e=>handleFile(e, 'logo')} className="w-full text-xs mt-1" />
+                                </div>
+                            </div>
+                            <div className="admin-card space-y-4">
+                                <h3 className="font-black text-blue-600 uppercase text-[10px] tracking-widest border-b pb-2">Gestión de Carrusel</h3>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {settings.bgImages?.map((img, i)=>(
+                                        <img key={i} src={img} className="w-full h-16 object-cover rounded-lg border" />
+                                    ))}
+                                </div>
+                                <input type="file" onChange={e=>handleFile(e, 'bg')} className="w-full text-xs" />
+                                <button onClick={()=>setSettings({...settings, bgImages:[]})} className="text-red-500 text-[10px] font-bold uppercase">Limpiar Carrusel</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<AdminApp />);
-        setTimeout(() => lucide.createIcons(), 1500);
     </script>
 </body>
 </html>
