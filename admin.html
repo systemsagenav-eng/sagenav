@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - System.Sagenav</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+        .admin-card { background: white; border-radius: 2rem; padding: 2rem; border: 1px solid #e2e8f0; }
+    </style>
+</head>
+<body class="bg-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const supabaseUrl = 'PON_AQUI_TU_URL_DE_SUPABASE';
+        const supabaseKey = 'PON_AQUI_TU_API_KEY_ANON';
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+        function AdminApp() {
+            const [authorized, setAuthorized] = useState(false);
+            const [settings, setSettings] = useState(null);
+            const [inventory, setInventory] = useState([]);
+            const [newProd, setNewProd] = useState({ name: "", price: "", type: "Producto", img: "" });
+
+            useEffect(() => {
+                const pass = prompt("Clave del Doctor:");
+                if (pass === "1234") setAuthorized(true);
+                else window.location.href = "index.html";
+            }, []);
+
+            useEffect(() => {
+                if(authorized) {
+                    const fetchData = async () => {
+                        const { data } = await supabaseClient.from('sagenav_data').select('*');
+                        if (data) {
+                            setSettings(data.find(d => d.key === 'settings').value);
+                            setInventory(data.find(d => d.key === 'inventory').value);
+                        }
+                    };
+                    fetchData();
+                }
+            }, [authorized]);
+
+            const saveChanges = async () => {
+                const { error: e1 } = await supabaseClient.from('sagenav_data').update({ value: settings }).eq('key', 'settings');
+                const { error: e2 } = await supabaseClient.from('sagenav_data').update({ value: inventory }).eq('key', 'inventory');
+                if(!e1 && !e2) alert("✅ ¡Nube Actualizada! El cliente ya ve los cambios.");
+                else alert("Error al guardar");
+            };
+
+            const handleFile = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onloadend = () => setNewProd({...newProd, img: reader.result});
+                if (file) reader.readAsDataURL(file);
+            };
+
+            if (!authorized || !settings) return <div className="p-20 text-center font-tech uppercase">Cargando Centro de Mando...</div>;
+
+            return (
+                <div className="p-8 md:p-12 min-h-screen">
+                    <div className="flex justify-between items-center mb-10">
+                        <h2 className="text-3xl font-black font-tech uppercase italic">Command Center</h2>
+                        <button onClick={saveChanges} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl">GUARDAR EN LA NUBE</button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="admin-card space-y-4">
+                            <h3 className="font-bold border-b pb-2 uppercase text-blue-600">Ajustes Web</h3>
+                            <input className="w-full p-3 border rounded-xl" value={settings.heroTitle} onChange={e=>setSettings({...settings, heroTitle: e.target.value})} placeholder="Título Principal" />
+                            <input className="w-full p-3 border rounded-xl" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp: e.target.value})} placeholder="WhatsApp (57...)" />
+                        </div>
+
+                        <div className="admin-card space-y-4">
+                            <h3 className="font-bold border-b pb-2 uppercase text-emerald-600">Nuevo Producto/Servicio</h3>
+                            <input className="w-full p-3 border rounded-xl" placeholder="Nombre" value={newProd.name} onChange={e=>setNewProd({...newProd, name:e.target.value})} />
+                            <input className="w-full p-3 border rounded-xl" type="number" placeholder="Precio" value={newProd.price} onChange={e=>setNewProd({...newProd, price:parseInt(e.target.value)})} />
+                            <input type="file" onChange={handleFile} className="text-xs" />
+                            <button onClick={()=>setInventory([...inventory, {...newProd, id:Date.now()}])} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">Añadir al Inventario</button>
+                        </div>
+                    </div>
+
+                    <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {inventory.map(item => (
+                            <div key={item.id} className="p-4 bg-white rounded-2xl border flex justify-between items-center">
+                                <div>
+                                    <p className="font-bold text-xs uppercase">{item.name}</p>
+                                    <p className="text-blue-600 font-black">${item.price.toLocaleString()}</p>
+                                </div>
+                                <button onClick={()=>setInventory(inventory.filter(i=>i.id!==item.id))} className="text-red-500 font-bold">×</button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AdminApp />);
+        setTimeout(() => lucide.createIcons(), 1000);
+    </script>
+</body>
+</html>
