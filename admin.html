@@ -12,27 +12,25 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         .font-tech { font-family: 'Orbitron', sans-serif; }
-        .admin-card { background: white; border-radius: 2rem; padding: 2rem; border: 1px solid #e2e8f0; }
     </style>
 </head>
 <body class="bg-slate-100">
     <div id="root"></div>
-
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        const supabaseUrl = 'PON_AQUI_TU_URL_DE_SUPABASE';
-        const supabaseKey = 'PON_AQUI_TU_API_KEY_ANON';
-        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+        // --- CONFIGURACIÓN DE SUPABASE (REEMPLAZA ESTO) ---
+        const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
+        const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
 
         function AdminApp() {
             const [authorized, setAuthorized] = useState(false);
             const [settings, setSettings] = useState(null);
             const [inventory, setInventory] = useState([]);
-            const [newProd, setNewProd] = useState({ name: "", price: "", type: "Producto", img: "" });
+            const [newProd, setNewProd] = useState({ name: "", price: "", img: "" });
 
             useEffect(() => {
                 const pass = prompt("Clave del Doctor:");
@@ -42,64 +40,58 @@
 
             useEffect(() => {
                 if(authorized) {
-                    const fetchData = async () => {
+                    const load = async () => {
                         const { data } = await supabaseClient.from('sagenav_data').select('*');
                         if (data) {
                             setSettings(data.find(d => d.key === 'settings').value);
                             setInventory(data.find(d => d.key === 'inventory').value);
                         }
                     };
-                    fetchData();
+                    load();
                 }
             }, [authorized]);
 
-            const saveChanges = async () => {
+            const save = async () => {
                 const { error: e1 } = await supabaseClient.from('sagenav_data').update({ value: settings }).eq('key', 'settings');
                 const { error: e2 } = await supabaseClient.from('sagenav_data').update({ value: inventory }).eq('key', 'inventory');
-                if(!e1 && !e2) alert("✅ ¡Nube Actualizada! El cliente ya ve los cambios.");
-                else alert("Error al guardar");
+                if (!e1 && !e2) alert("✅ Nube Actualizada");
+                else alert("❌ Error al guardar");
             };
 
-            const handleFile = (e) => {
-                const file = e.target.files[0];
-                const reader = new FileReader();
-                reader.onloadend = () => setNewProd({...newProd, img: reader.result});
-                if (file) reader.readAsDataURL(file);
+            const addProduct = () => {
+                setInventory([...inventory, {...newProd, id: Date.now()}]);
+                setNewProd({ name: "", price: "", img: "" });
             };
 
-            if (!authorized || !settings) return <div className="p-20 text-center font-tech uppercase">Cargando Centro de Mando...</div>;
+            if (!authorized || !settings) return <div className="p-20 text-center font-tech">ACCEDIENDO AL SISTEMA...</div>;
 
             return (
-                <div className="p-8 md:p-12 min-h-screen">
+                <div className="p-6 max-w-4xl mx-auto">
                     <div className="flex justify-between items-center mb-10">
-                        <h2 className="text-3xl font-black font-tech uppercase italic">Command Center</h2>
-                        <button onClick={saveChanges} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl">GUARDAR EN LA NUBE</button>
+                        <h2 className="text-2xl font-black font-tech italic">COMMAND CENTER</h2>
+                        <button onClick={save} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold">GUARDAR EN LA NUBE</button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="admin-card space-y-4">
-                            <h3 className="font-bold border-b pb-2 uppercase text-blue-600">Ajustes Web</h3>
-                            <input className="w-full p-3 border rounded-xl" value={settings.heroTitle} onChange={e=>setSettings({...settings, heroTitle: e.target.value})} placeholder="Título Principal" />
-                            <input className="w-full p-3 border rounded-xl" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp: e.target.value})} placeholder="WhatsApp (57...)" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                        <div className="bg-white p-6 rounded-3xl shadow-md space-y-4">
+                            <h3 className="font-bold border-b pb-2">Ajustes Generales</h3>
+                            <input className="w-full p-2 border rounded" value={settings.heroTitle} onChange={e=>setSettings({...settings, heroTitle: e.target.value})} placeholder="Título" />
+                            <input className="w-full p-2 border rounded" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp: e.target.value})} placeholder="WhatsApp" />
                         </div>
 
-                        <div className="admin-card space-y-4">
-                            <h3 className="font-bold border-b pb-2 uppercase text-emerald-600">Nuevo Producto/Servicio</h3>
-                            <input className="w-full p-3 border rounded-xl" placeholder="Nombre" value={newProd.name} onChange={e=>setNewProd({...newProd, name:e.target.value})} />
-                            <input className="w-full p-3 border rounded-xl" type="number" placeholder="Precio" value={newProd.price} onChange={e=>setNewProd({...newProd, price:parseInt(e.target.value)})} />
-                            <input type="file" onChange={handleFile} className="text-xs" />
-                            <button onClick={()=>setInventory([...inventory, {...newProd, id:Date.now()}])} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">Añadir al Inventario</button>
+                        <div className="bg-white p-6 rounded-3xl shadow-md space-y-4">
+                            <h3 className="font-bold border-b pb-2">Nuevo Servicio</h3>
+                            <input className="w-full p-2 border rounded" placeholder="Nombre" value={newProd.name} onChange={e=>setNewProd({...newProd, name: e.target.value})} />
+                            <input className="w-full p-2 border rounded" type="number" placeholder="Precio" value={newProd.price} onChange={e=>setNewProd({...newProd, price: parseInt(e.target.value)})} />
+                            <button onClick={addProduct} className="w-full bg-blue-600 text-white py-2 rounded-xl">Agregar localmente</button>
                         </div>
                     </div>
 
-                    <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2">
                         {inventory.map(item => (
-                            <div key={item.id} className="p-4 bg-white rounded-2xl border flex justify-between items-center">
-                                <div>
-                                    <p className="font-bold text-xs uppercase">{item.name}</p>
-                                    <p className="text-blue-600 font-black">${item.price.toLocaleString()}</p>
-                                </div>
-                                <button onClick={()=>setInventory(inventory.filter(i=>i.id!==item.id))} className="text-red-500 font-bold">×</button>
+                            <div key={item.id} className="bg-white p-4 rounded-xl border flex justify-between">
+                                <span>{item.name} - <b>${item.price}</b></span>
+                                <button onClick={()=>setInventory(inventory.filter(i=>i.id!==item.id))} className="text-red-500">Eliminar</button>
                             </div>
                         ))}
                     </div>
@@ -108,7 +100,7 @@
         }
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<AdminApp />);
-        setTimeout(() => lucide.createIcons(), 1000);
+        setTimeout(() => lucide.createIcons(), 1500);
     </script>
 </body>
 </html>

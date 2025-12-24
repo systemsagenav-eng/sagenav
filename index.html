@@ -12,88 +12,80 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
         .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); }
-        .carousel-fade { transition: opacity 1.5s ease-in-out; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- CONFIGURACIÓN DE SUPABASE ---
-        const supabaseUrl = 'PON_AQUI_TU_URL_DE_SUPABASE';
-        const supabaseKey = 'PON_AQUI_TU_API_KEY_ANON';
-        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+        // --- CONFIGURACIÓN DE SUPABASE (REEMPLAZA ESTO) ---
+        const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
+        const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
 
         function App() {
-            const [settings, setSettings] = useState({
-                heroTitle: "CARGANDO...", whatsapp: "573000000000", bgImages: [""]
-            });
+            const [settings, setSettings] = useState(null);
             const [inventory, setInventory] = useState([]);
             const [cart, setCart] = useState([]);
-            const [currentSlide, setCurrentSlide] = useState(0);
 
-            // CARGAR DATOS DESDE SUPABASE
             useEffect(() => {
-                const fetchData = async () => {
-                    const { data } = await supabaseClient.from('sagenav_data').select('*');
-                    if (data) {
-                        setSettings(data.find(d => d.key === 'settings').value);
-                        setInventory(data.find(d => d.key === 'inventory').value);
-                    }
+                const load = async () => {
+                    try {
+                        const { data, error } = await supabaseClient.from('sagenav_data').select('*');
+                        if (data) {
+                            setSettings(data.find(d => d.key === 'settings').value);
+                            setInventory(data.find(d => d.key === 'inventory').value);
+                        }
+                    } catch (e) { console.error("Error cargando:", e); }
                 };
-                fetchData();
-                const timer = setInterval(() => setCurrentSlide(p => (p + 1) % (settings.bgImages?.length || 1)), 5000);
-                return () => clearInterval(timer);
-            }, [settings.bgImages]);
+                load();
+            }, []);
 
             const handleWhatsApp = () => {
-                const items = cart.map(i => `- ${i.name} ($${i.price})`).join('%0A');
-                const msg = cart.length > 0 ? `*PEDIDO SAGENAV*%0A%0A${items}` : "Hola Doctor, solicito una asesoría.";
-                window.open(`https://wa.me/${settings.whatsapp}?text=${msg}`);
+                const msg = cart.length > 0 ? `Hola Doctor, me interesan: ${cart.map(i=>i.name).join(', ')}` : "Hola Doctor, solicito soporte técnico.";
+                window.open(`https://wa.me/${settings?.whatsapp || '57'}?text=${encodeURIComponent(msg)}`);
             };
 
+            if (!settings) return <div className="p-20 text-center font-tech animate-pulse">CARGANDO SYSTEM.SAGENAV...</div>;
+
             return (
-                <div className="min-h-screen flex flex-col">
+                <div className="min-h-screen">
                     <nav className="glass sticky top-0 z-40 p-4 border-b flex justify-between items-center px-10">
-                        <span className="font-tech font-black italic text-xl uppercase tracking-tighter text-blue-600">System.Sagenav</span>
+                        <span className="font-tech font-black italic text-xl uppercase text-blue-600">System.Sagenav</span>
                     </nav>
 
-                    <header className="h-[50vh] relative overflow-hidden flex items-center justify-center text-white text-center">
-                        {settings.bgImages?.map((img, i) => (
-                            <img key={i} src={img} className={`absolute inset-0 w-full h-full object-cover brightness-[0.3] carousel-fade ${i === currentSlide ? 'opacity-100' : 'opacity-0'}`} />
-                        ))}
-                        <h1 className="relative z-10 text-4xl md:text-6xl font-black font-tech uppercase px-6">{settings.heroTitle}</h1>
+                    <header className="h-[40vh] relative overflow-hidden flex items-center justify-center text-white text-center bg-slate-900">
+                        <img src={settings.bgImages?.[0]} className="absolute inset-0 w-full h-full object-cover opacity-30" />
+                        <h1 className="relative z-10 text-4xl font-black font-tech uppercase">{settings.heroTitle}</h1>
                     </header>
 
-                    <main className="max-w-7xl mx-auto p-10 space-y-10">
-                        <h2 className="text-3xl font-black uppercase italic border-l-8 border-blue-600 pl-4">Nuestros Servicios</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            {inventory.map(item => (
-                                <div key={item.id} className="bg-white rounded-3xl shadow-xl p-6 border">
+                    <main className="max-w-6xl mx-auto p-10 grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {inventory.map(item => (
+                            <div key={item.id} className="bg-white rounded-3xl shadow-xl p-6 border flex flex-col justify-between">
+                                <div>
                                     {item.img && <img src={item.img} className="w-full h-40 object-cover rounded-2xl mb-4" />}
                                     <h4 className="font-black text-xl uppercase">{item.name}</h4>
-                                    <p className="text-blue-600 font-black text-2xl">${item.price.toLocaleString()}</p>
-                                    <button onClick={() => setCart([...cart, item])} className="w-full mt-4 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition">Añadir al pedido</button>
+                                    <p className="text-blue-600 font-black text-2xl">${item.price?.toLocaleString()}</p>
                                 </div>
-                            ))}
-                        </div>
+                                <button onClick={() => setCart([...cart, item])} className="mt-4 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-blue-600">Añadir al pedido</button>
+                            </div>
+                        ))}
                     </main>
 
                     <button onClick={handleWhatsApp} className="fixed bottom-6 right-6 bg-green-500 text-white p-4 rounded-full shadow-2xl z-50">
                         <i data-lucide="message-circle" size={28}></i>
-                        {cart.length > 0 && <span className="absolute -top-1 -left-1 bg-red-600 text-xs px-2 rounded-full border-2 border-white">{cart.length}</span>}
+                        {cart.length > 0 && <span className="absolute -top-1 -left-1 bg-red-600 text-xs px-2 rounded-full">{cart.length}</span>}
                     </button>
                 </div>
             );
         }
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
-        setTimeout(() => lucide.createIcons(), 1000);
+        setTimeout(() => lucide.createIcons(), 1500);
     </script>
 </body>
 </html>
