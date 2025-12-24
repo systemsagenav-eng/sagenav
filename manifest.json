@@ -1,0 +1,16 @@
+{
+  "name": "System.Sagenav Admin",
+  "short_name": "Sagenav Admin",
+  "description": "Panel de Control para el Doctor de la Informática",
+  "start_url": "admin.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3059/3059518.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
