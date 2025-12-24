@@ -48,7 +48,7 @@
 
             const handleWhatsApp = () => {
                 const items = cart.map(i => `- ${i.name}`).join('%0A');
-                const msg = cart.length > 0 ? `Hola Doctor, me interesa:%0A${items}` : "Hola Doctor, necesito una asesoría tecnológica.";
+                const msg = cart.length > 0 ? `Hola Doctor, me interesa:%0A${items}` : "Hola Doctor de la informatica, necesito una asesoría tecnológica.";
                 window.open(`https://wa.me/${settings?.whatsapp}?text=${msg}`);
             };
 
@@ -136,7 +136,7 @@
                     <button onClick={handleWhatsApp} className="fixed bottom-8 right-8 bg-[#25D366] text-white p-4 rounded-full shadow-[0_10px_40px_rgba(37,211,102,0.4)] z-50 flex items-center gap-3 hover:scale-110 transition-transform active:scale-95 group">
                         <div className="flex flex-col items-end hidden group-hover:flex">
                              <span className="text-[10px] font-black uppercase tracking-tighter leading-none">Habla con el</span>
-                             <span className="text-xs font-black uppercase leading-none">Doctor ahora</span>
+                             <span className="text-xs font-black uppercase leading-none">Doctor de la informatica ahora</span>
                         </div>
                         <i data-lucide="message-circle" size={32} fill="white"></i>
                         {cart.length > 0 && <span className="absolute -top-2 -left-2 bg-red-600 text-white text-[10px] font-black w-6 h-6 rounded-full border-2 border-white flex items-center justify-center">{cart.length}</span>}
