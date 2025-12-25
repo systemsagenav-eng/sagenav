@@ -17,6 +17,8 @@
         .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-bottom: 1px solid #e2e8f0; }
         .hero-overlay { background: linear-gradient(to bottom, rgba(15,23,42,0.4), rgba(15,23,42,0.95)); }
         .fade-img { transition: opacity 1.5s ease-in-out; }
+        .slide-up { animation: slideUp 0.3s ease-out forwards; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -37,8 +39,9 @@
             const [activeTab, setActiveTab] = useState('Todos');
             const [cart, setCart] = useState([]);
             const [currentImg, setCurrentImg] = useState(0);
+            const [showCartModal, setShowCartModal] = useState(false);
 
-            // Cargar datos de la nube
+            // Cargar datos
             useEffect(() => {
                 const load = async () => {
                     const { data } = await supabaseClient.from('sagenav_data').select('*');
@@ -50,7 +53,7 @@
                 load();
             }, []);
 
-            // Rotación automática del Carrusel
+            // Carrusel
             useEffect(() => {
                 if (settings?.bgImages?.length > 1) {
                     const timer = setInterval(() => setCurrentImg(p => (p + 1) % settings.bgImages.length), 5000);
@@ -58,28 +61,38 @@
                 }
             }, [settings]);
 
-            // Mensaje de WhatsApp dinámico
+            // Eliminar del carrito
+            const removeFromCart = (indexToRemove) => {
+                setCart(cart.filter((_, index) => index !== indexToRemove));
+                if (cart.length <= 1) setShowCartModal(false); // Cerrar si queda vacío
+            };
+
+            // Calcular Total
+            const cartTotal = cart.reduce((total, item) => total + (item.price || 0), 0);
+
+            // Enviar WhatsApp
             const handleWhatsApp = () => {
-                const items = cart.map(i => `- ${i.name}`).join('%0A');
+                const itemsList = cart.map(i => `- ${i.name} ($${i.price?.toLocaleString()})`).join('%0A');
+                // CAMBIO DE MENSAJE AQUÍ
                 const text = cart.length > 0 
-                    ? `Hola Doctor, deseo encargar:%0A${items}` 
-                    : "Hola Doctor, necesito información sobre sus servicios.";
+                    ? `Hola Ingeniero / Doctor de la Informática, deseo encargar lo siguiente:%0A%0A${itemsList}%0A%0A*Total: $${cartTotal.toLocaleString()}*` 
+                    : "Hola Ingeniero, necesito información sobre sus servicios.";
                 window.open(`https://wa.me/${settings?.whatsapp}?text=${text}`);
             };
 
-            if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse text-blue-600 tracking-widest">CARGANDO SAGENAV...</div>;
+            if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse text-blue-600 tracking-widest">CARGANDO...</div>;
 
             const filteredItems = activeTab === 'Todos' ? inventory : inventory.filter(i => i.category === activeTab);
 
             return (
-                <div className="min-h-screen flex flex-col">
-                    {/* BARRA DE NAVEGACIÓN */}
-                    <nav className="glass sticky top-0 z-50 p-4 flex justify-between items-center px-6 md:px-20">
+                <div className="min-h-screen flex flex-col pb-24"> {/* Padding bottom extra para la barra del carrito */}
+                    
+                    {/* NAV */}
+                    <nav className="glass sticky top-0 z-40 p-4 flex justify-between items-center px-6 md:px-20">
                         <div className="flex flex-col cursor-pointer" onClick={()=>window.scrollTo(0,0)}>
                             <span className="font-tech font-black text-blue-600 text-xl italic uppercase tracking-tighter">System.Sagenav</span>
                             <span className="text-[8px] font-bold uppercase opacity-60 tracking-widest">Doctor de la informática</span>
                         </div>
-                        {/* Pestañas Desktop */}
                         <div className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest">
                             <button onClick={() => setActiveTab('Todos')} className={`pb-1 transition-colors ${activeTab === 'Todos' ? 'text-blue-600 border-b-2 border-blue-600' : 'hover:text-blue-400'}`}>Inicio</button>
                             {settings.categories?.map(cat => (
@@ -88,114 +101,124 @@
                         </div>
                     </nav>
 
-                    {/* HERO (PORTADA) */}
+                    {/* HERO */}
                     <header className="relative h-[65vh] flex items-center justify-center text-white text-center overflow-hidden bg-slate-900">
                         {settings.bgImages?.length > 0 ? settings.bgImages.map((img, idx) => (
                             <img key={idx} src={img} className={`absolute inset-0 w-full h-full object-cover fade-img ${idx === currentImg ? 'opacity-100' : 'opacity-0'}`} />
                         )) : <div className="absolute inset-0 bg-slate-900"></div>}
-                        
                         <div className="absolute inset-0 hero-overlay"></div>
-                        
                         <div className="relative z-10 px-6 max-w-4xl animate-in fade-in zoom-in duration-1000">
-                            <h2 className="text-blue-400 font-tech text-[10px] tracking-[0.4em] mb-4 uppercase">Soluciones Tecnológicas Integrales</h2>
+                            <h2 className="text-blue-400 font-tech text-[10px] tracking-[0.4em] mb-4 uppercase">Soluciones Tecnológicas</h2>
                             <h1 className="text-4xl md:text-7xl font-black font-tech italic mb-4 uppercase leading-none drop-shadow-lg">{settings.heroTitle}</h1>
                             <p className="text-slate-200 italic text-sm md:text-xl font-light max-w-2xl mx-auto border-t border-slate-500/50 pt-4 mt-4">
-                                {settings.commercialDesc || "Mantenimiento, Software y Hardware Especializado."}
+                                {settings.commercialDesc}
                             </p>
                         </div>
                     </header>
 
-                    {/* PESTAÑAS MÓVIL (SCROLL HORIZONTAL) */}
-                    <div className="md:hidden sticky top-[73px] z-40 bg-white/95 backdrop-blur shadow-sm border-b">
+                    {/* PESTAÑAS MÓVIL */}
+                    <div className="md:hidden sticky top-[73px] z-30 bg-white/95 backdrop-blur shadow-sm border-b">
                         <div className="flex overflow-x-auto p-3 gap-3 no-scrollbar">
-                            <button onClick={() => setActiveTab('Todos')} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeTab === 'Todos' ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-600'}`}>Todos</button>
+                            <button onClick={() => setActiveTab('Todos')} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeTab === 'Todos' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600'}`}>Todos</button>
                             {settings.categories?.map(cat => (
-                                <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeTab === cat ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-600'}`}>{cat}</button>
+                                <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeTab === cat ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600'}`}>{cat}</button>
                             ))}
                         </div>
                     </div>
 
-                    {/* CATÁLOGO DE PRODUCTOS */}
+                    {/* LISTA DE PRODUCTOS */}
                     <main className="max-w-7xl mx-auto p-6 md:p-20 flex-grow w-full">
                         <div className="flex items-center gap-4 mb-8">
                             <h3 className="text-2xl font-black uppercase italic border-l-4 border-blue-600 pl-4">{activeTab}</h3>
-                            <span className="text-xs font-bold bg-slate-200 px-2 py-1 rounded-full text-slate-500">{filteredItems.length} Resultados</span>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                             {filteredItems.map(item => (
-                                <div key={item.id} className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 group">
+                                <div key={item.id} className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-300">
                                     <div className="relative h-64 bg-slate-100">
-                                        {item.img ? (
-                                            <img src={item.img} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-slate-300 font-tech">NO IMAGE</div>
-                                        )}
-                                        
-                                        {/* ETIQUETAS FLOTANTES */}
+                                        {item.img ? <img src={item.img} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-xs text-slate-400">SIN FOTO</div>}
                                         <div className="absolute top-4 left-4 flex flex-col gap-2 items-start">
-                                            <span className="bg-blue-600/90 backdrop-blur text-white text-[8px] font-black px-3 py-1 rounded-full uppercase shadow-lg tracking-widest">{item.category}</span>
-                                            {item.onDemand && (
-                                                <span className="bg-orange-500 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase shadow-lg animate-pulse flex items-center gap-1">
-                                                    <i data-lucide="clock" size={8}></i> Por Encargo
-                                                </span>
-                                            )}
+                                            <span className="bg-blue-600/90 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase shadow-lg tracking-widest">{item.category}</span>
+                                            {item.onDemand && <span className="bg-orange-500 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase shadow-lg animate-pulse">Por Encargo</span>}
                                         </div>
                                     </div>
-                                    
                                     <div className="p-6">
                                         <h4 className="font-black text-lg uppercase mb-1 leading-tight">{item.name}</h4>
                                         <div className="flex justify-between items-end mt-4">
                                             <p className="text-blue-600 font-black text-2xl">${item.price?.toLocaleString()}</p>
-                                            <button onClick={() => setCart([...cart, item])} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-blue-600 hover:scale-110 transition-all shadow-lg active:scale-95">
+                                            <button onClick={() => setCart([...cart, item])} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-blue-600 active:scale-90 transition-all shadow-lg">
                                                 <i data-lucide="plus" size={20}></i>
                                             </button>
                                         </div>
-                                        <button onClick={() => setCart([...cart, item])} className="w-full mt-4 bg-slate-50 text-slate-900 py-3 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-slate-200 transition-colors md:hidden">
-                                            Añadir al pedido
-                                        </button>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </main>
 
-                    {/* PIE DE PÁGINA */}
+                    {/* FOOTER */}
                     <footer className="bg-slate-900 text-slate-400 p-10 md:p-20 border-t border-slate-800">
                         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12">
                             <div className="space-y-4">
                                 <span className="font-tech font-black text-white text-2xl italic uppercase tracking-tighter">System.Sagenav</span>
-                                <p className="text-xs italic leading-relaxed max-w-sm text-slate-300">
-                                    {settings.footerText || "El Doctor de la informática - Mantenimiento y Soluciones Tecnológicas."}
-                                </p>
+                                <p className="text-xs italic leading-relaxed max-w-sm text-slate-300">{settings.footerText}</p>
                             </div>
                             <div className="text-[10px] font-bold uppercase tracking-widest space-y-4">
-                                <p className="text-white mb-4 border-l-2 border-blue-600 pl-3 italic">Información de Contacto</p>
-                                <p className="flex items-center gap-3 hover:text-white transition-colors">
-                                    <span className="bg-slate-800 p-2 rounded-full"><i data-lucide="map-pin" size={14}></i></span> 
-                                    {settings.personalAddress}
-                                </p>
-                                <p className="flex items-center gap-3 hover:text-white transition-colors">
-                                    <span className="bg-slate-800 p-2 rounded-full"><i data-lucide="phone" size={14}></i></span> 
-                                    +{settings.whatsapp}
-                                </p>
-                                <p className="flex items-center gap-3 hover:text-white transition-colors">
-                                    <span className="bg-slate-800 p-2 rounded-full"><i data-lucide="fingerprint" size={14}></i></span> 
-                                    NIT: {settings.personalId}
-                                </p>
+                                <p className="text-white mb-4 border-l-2 border-blue-600 pl-3 italic">Contacto</p>
+                                <p>{settings.personalAddress}</p>
+                                <p>+{settings.whatsapp}</p>
+                                <p>NIT: {settings.personalId}</p>
                             </div>
-                        </div>
-                        <div className="mt-16 pt-8 border-t border-slate-800 text-center text-[10px] opacity-30 font-bold uppercase tracking-widest">
-                            © {new Date().getFullYear()} System.Sagenav - Doctor de la Informática
                         </div>
                     </footer>
 
-                    {/* BOTÓN WHATSAPP FLOTANTE */}
-                    <button onClick={handleWhatsApp} className="fixed bottom-6 right-6 md:bottom-10 md:right-10 bg-[#25D366] text-white p-4 rounded-full shadow-[0_4px_20px_rgba(37,211,102,0.4)] z-50 flex items-center gap-3 hover:scale-110 transition-transform active:scale-95 group">
-                         <span className="hidden group-hover:block text-[10px] font-black uppercase tracking-tighter pr-1 animate-in slide-in-from-right">Hablar con el Doctor</span>
-                         <i data-lucide="message-circle" size={28} fill="white"></i>
-                         {cart.length > 0 && <span className="absolute -top-1 -left-1 bg-red-600 text-white text-[10px] font-black w-6 h-6 rounded-full border-2 border-slate-900 flex items-center justify-center shadow-sm animate-bounce">{cart.length}</span>}
-                    </button>
+                    {/* --- BARRA FLOTANTE DEL CARRITO (NUEVO) --- */}
+                    {cart.length > 0 && (
+                        <div className="fixed bottom-0 left-0 w-full bg-slate-900 text-white p-4 shadow-[0_-5px_20px_rgba(0,0,0,0.3)] z-50 slide-up flex justify-between items-center px-6 md:px-20 border-t border-slate-700">
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-bold uppercase opacity-60 tracking-widest">Total Estimado</span>
+                                <span className="text-xl font-black font-tech">${cartTotal.toLocaleString()}</span>
+                            </div>
+                            <button onClick={() => setShowCartModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95">
+                                Ver Carrito <span className="bg-white text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-black">{cart.length}</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* --- MODAL DEL CARRITO (NUEVO) --- */}
+                    {showCartModal && (
+                        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[60] flex items-end md:items-center justify-center p-0 md:p-4 fade-in">
+                            <div className="bg-white w-full max-w-md md:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                                <div className="p-6 bg-slate-50 border-b flex justify-between items-center sticky top-0">
+                                    <h3 className="font-black text-lg uppercase italic text-slate-900">Tu Pedido</h3>
+                                    <button onClick={() => setShowCartModal(false)} className="bg-slate-200 p-2 rounded-full hover:bg-slate-300"><i data-lucide="x" size={20}></i></button>
+                                </div>
+                                <div className="p-6 overflow-y-auto space-y-4 flex-grow">
+                                    {cart.length === 0 ? <p className="text-center opacity-50 text-xs">El carrito está vacío.</p> : cart.map((item, idx) => (
+                                        <div key={idx} className="flex justify-between items-center border-b pb-4 last:border-0">
+                                            <div className="flex items-center gap-4">
+                                                {item.img && <img src={item.img} className="w-12 h-12 rounded-lg object-cover bg-slate-100" />}
+                                                <div>
+                                                    <p className="font-bold text-xs uppercase">{item.name}</p>
+                                                    <p className="text-blue-600 font-black text-sm">${item.price?.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => removeFromCart(idx)} className="text-red-400 hover:text-red-600 p-2"><i data-lucide="trash-2" size={18}></i></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="p-6 bg-slate-50 border-t space-y-4">
+                                    <div className="flex justify-between items-center text-lg font-black uppercase">
+                                        <span>Total:</span>
+                                        <span className="text-blue-600">${cartTotal.toLocaleString()}</span>
+                                    </div>
+                                    <button onClick={handleWhatsApp} className="w-full bg-[#25D366] text-white py-4 rounded-xl font-bold uppercase text-xs flex items-center justify-center gap-2 hover:brightness-110 transition-all shadow-lg">
+                                        <i data-lucide="message-circle" fill="white"></i> Enviar al Doctor
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
