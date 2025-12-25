@@ -28,7 +28,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- CONFIGURACIÓN DE SUPABASE ---
+        // --- TUS LLAVES ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
@@ -41,7 +41,6 @@
             const [currentImg, setCurrentImg] = useState(0);
             const [showCartModal, setShowCartModal] = useState(false);
 
-            // Cargar datos
             useEffect(() => {
                 const load = async () => {
                     const { data } = await supabaseClient.from('sagenav_data').select('*');
@@ -53,7 +52,6 @@
                 load();
             }, []);
 
-            // Carrusel
             useEffect(() => {
                 if (settings?.bgImages?.length > 1) {
                     const timer = setInterval(() => setCurrentImg(p => (p + 1) % settings.bgImages.length), 5000);
@@ -61,21 +59,48 @@
                 }
             }, [settings]);
 
-            // Eliminar del carrito
-            const removeFromCart = (indexToRemove) => {
-                setCart(cart.filter((_, index) => index !== indexToRemove));
-                if (cart.length <= 1) setShowCartModal(false); // Cerrar si queda vacío
+            // Forzar carga de iconos cuando cambia el carrito o se abre el modal
+            useEffect(() => {
+                lucide.createIcons();
+            }, [cart, showCartModal, activeTab, settings]);
+
+            // --- LÓGICA DEL CARRITO ---
+            const addToCart = (item) => {
+                setCart([...cart, item]);
             };
 
-            // Calcular Total
+            const removeFromCart = (itemId) => {
+                // Encontrar el índice del primer ítem con ese ID para borrar solo uno
+                const index = cart.findIndex(i => i.id === itemId);
+                if (index > -1) {
+                    const newCart = [...cart];
+                    newCart.splice(index, 1);
+                    setCart(newCart);
+                    if (newCart.length === 0) setShowCartModal(false);
+                }
+            };
+
+            // Agrupar productos iguales para mostrar en el modal
+            const getGroupedCart = () => {
+                const grouped = {};
+                cart.forEach(item => {
+                    if (grouped[item.id]) {
+                        grouped[item.id].qty += 1;
+                    } else {
+                        grouped[item.id] = { ...item, qty: 1 };
+                    }
+                });
+                return Object.values(grouped);
+            };
+
             const cartTotal = cart.reduce((total, item) => total + (item.price || 0), 0);
 
-            // Enviar WhatsApp
             const handleWhatsApp = () => {
-                const itemsList = cart.map(i => `- ${i.name} ($${i.price?.toLocaleString()})`).join('%0A');
-                // CAMBIO DE MENSAJE AQUÍ
+                const grouped = getGroupedCart();
+                const itemsList = grouped.map(i => `- (${i.qty}) ${i.name} $${(i.price * i.qty).toLocaleString()}`).join('%0A');
+                
                 const text = cart.length > 0 
-                    ? `Hola Ingeniero / Doctor de la Informática, deseo encargar lo siguiente:%0A%0A${itemsList}%0A%0A*Total: $${cartTotal.toLocaleString()}*` 
+                    ? `Hola Ingeniero / Doctor de la Informática, deseo encargar:%0A%0A${itemsList}%0A%0A*Total: $${cartTotal.toLocaleString()}*` 
                     : "Hola Ingeniero, necesito información sobre sus servicios.";
                 window.open(`https://wa.me/${settings?.whatsapp}?text=${text}`);
             };
@@ -85,9 +110,8 @@
             const filteredItems = activeTab === 'Todos' ? inventory : inventory.filter(i => i.category === activeTab);
 
             return (
-                <div className="min-h-screen flex flex-col pb-24"> {/* Padding bottom extra para la barra del carrito */}
+                <div className="min-h-screen flex flex-col pb-24">
                     
-                    {/* NAV */}
                     <nav className="glass sticky top-0 z-40 p-4 flex justify-between items-center px-6 md:px-20">
                         <div className="flex flex-col cursor-pointer" onClick={()=>window.scrollTo(0,0)}>
                             <span className="font-tech font-black text-blue-600 text-xl italic uppercase tracking-tighter">System.Sagenav</span>
@@ -101,22 +125,18 @@
                         </div>
                     </nav>
 
-                    {/* HERO */}
                     <header className="relative h-[65vh] flex items-center justify-center text-white text-center overflow-hidden bg-slate-900">
                         {settings.bgImages?.length > 0 ? settings.bgImages.map((img, idx) => (
                             <img key={idx} src={img} className={`absolute inset-0 w-full h-full object-cover fade-img ${idx === currentImg ? 'opacity-100' : 'opacity-0'}`} />
                         )) : <div className="absolute inset-0 bg-slate-900"></div>}
                         <div className="absolute inset-0 hero-overlay"></div>
-                        <div className="relative z-10 px-6 max-w-4xl animate-in fade-in zoom-in duration-1000">
+                        <div className="relative z-10 px-6 max-w-4xl">
                             <h2 className="text-blue-400 font-tech text-[10px] tracking-[0.4em] mb-4 uppercase">Soluciones Tecnológicas</h2>
                             <h1 className="text-4xl md:text-7xl font-black font-tech italic mb-4 uppercase leading-none drop-shadow-lg">{settings.heroTitle}</h1>
-                            <p className="text-slate-200 italic text-sm md:text-xl font-light max-w-2xl mx-auto border-t border-slate-500/50 pt-4 mt-4">
-                                {settings.commercialDesc}
-                            </p>
+                            <p className="text-slate-200 italic text-sm md:text-xl font-light max-w-2xl mx-auto border-t border-slate-500/50 pt-4 mt-4">{settings.commercialDesc}</p>
                         </div>
                     </header>
 
-                    {/* PESTAÑAS MÓVIL */}
                     <div className="md:hidden sticky top-[73px] z-30 bg-white/95 backdrop-blur shadow-sm border-b">
                         <div className="flex overflow-x-auto p-3 gap-3 no-scrollbar">
                             <button onClick={() => setActiveTab('Todos')} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeTab === 'Todos' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600'}`}>Todos</button>
@@ -126,7 +146,6 @@
                         </div>
                     </div>
 
-                    {/* LISTA DE PRODUCTOS */}
                     <main className="max-w-7xl mx-auto p-6 md:p-20 flex-grow w-full">
                         <div className="flex items-center gap-4 mb-8">
                             <h3 className="text-2xl font-black uppercase italic border-l-4 border-blue-600 pl-4">{activeTab}</h3>
@@ -146,7 +165,7 @@
                                         <h4 className="font-black text-lg uppercase mb-1 leading-tight">{item.name}</h4>
                                         <div className="flex justify-between items-end mt-4">
                                             <p className="text-blue-600 font-black text-2xl">${item.price?.toLocaleString()}</p>
-                                            <button onClick={() => setCart([...cart, item])} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-blue-600 active:scale-90 transition-all shadow-lg">
+                                            <button onClick={() => addToCart(item)} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-blue-600 active:scale-90 transition-all shadow-lg">
                                                 <i data-lucide="plus" size={20}></i>
                                             </button>
                                         </div>
@@ -156,7 +175,6 @@
                         </div>
                     </main>
 
-                    {/* FOOTER */}
                     <footer className="bg-slate-900 text-slate-400 p-10 md:p-20 border-t border-slate-800">
                         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12">
                             <div className="space-y-4">
@@ -172,9 +190,8 @@
                         </div>
                     </footer>
 
-                    {/* --- BARRA FLOTANTE DEL CARRITO (NUEVO) --- */}
                     {cart.length > 0 && (
-                        <div className="fixed bottom-0 left-0 w-full bg-slate-900 text-white p-4 shadow-[0_-5px_20px_rgba(0,0,0,0.3)] z-50 slide-up flex justify-between items-center px-6 md:px-20 border-t border-slate-700">
+                        <div className="fixed bottom-0 left-0 w-full bg-slate-900 text-white p-4 shadow-xl z-50 slide-up flex justify-between items-center px-6 md:px-20 border-t border-slate-700">
                             <div className="flex flex-col">
                                 <span className="text-[10px] font-bold uppercase opacity-60 tracking-widest">Total Estimado</span>
                                 <span className="text-xl font-black font-tech">${cartTotal.toLocaleString()}</span>
@@ -185,7 +202,6 @@
                         </div>
                     )}
 
-                    {/* --- MODAL DEL CARRITO (NUEVO) --- */}
                     {showCartModal && (
                         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[60] flex items-end md:items-center justify-center p-0 md:p-4 fade-in">
                             <div className="bg-white w-full max-w-md md:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -194,16 +210,24 @@
                                     <button onClick={() => setShowCartModal(false)} className="bg-slate-200 p-2 rounded-full hover:bg-slate-300"><i data-lucide="x" size={20}></i></button>
                                 </div>
                                 <div className="p-6 overflow-y-auto space-y-4 flex-grow">
-                                    {cart.length === 0 ? <p className="text-center opacity-50 text-xs">El carrito está vacío.</p> : cart.map((item, idx) => (
+                                    {getGroupedCart().map((item, idx) => (
                                         <div key={idx} className="flex justify-between items-center border-b pb-4 last:border-0">
-                                            <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-3">
                                                 {item.img && <img src={item.img} className="w-12 h-12 rounded-lg object-cover bg-slate-100" />}
                                                 <div>
-                                                    <p className="font-bold text-xs uppercase">{item.name}</p>
-                                                    <p className="text-blue-600 font-black text-sm">${item.price?.toLocaleString()}</p>
+                                                    <p className="font-bold text-xs uppercase max-w-[120px] truncate">{item.name}</p>
+                                                    <p className="text-blue-600 font-black text-xs">${item.price?.toLocaleString()}</p>
                                                 </div>
                                             </div>
-                                            <button onClick={() => removeFromCart(idx)} className="text-red-400 hover:text-red-600 p-2"><i data-lucide="trash-2" size={18}></i></button>
+                                            <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                                                <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center bg-white rounded-md shadow-sm text-red-500 hover:text-red-700 font-bold active:scale-90">
+                                                    <i data-lucide="minus" size={14}></i>
+                                                </button>
+                                                <span className="font-black text-xs w-6 text-center">{item.qty}</span>
+                                                <button onClick={() => addToCart(item)} className="w-8 h-8 flex items-center justify-center bg-blue-600 rounded-md shadow-sm text-white hover:bg-blue-700 font-bold active:scale-90">
+                                                    <i data-lucide="plus" size={14}></i>
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -224,7 +248,6 @@
         }
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
-        setTimeout(() => lucide.createIcons(), 1000);
     </script>
 </body>
 </html>
