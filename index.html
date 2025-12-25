@@ -11,12 +11,11 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;600;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
-        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
-        .tab-active { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 800; }
-        .hero-gradient { background: linear-gradient(to bottom, rgba(15,23,42,0.8), rgba(15,23,42,0.95)); }
+        .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+        .hero-overlay { background: linear-gradient(to bottom, rgba(15,23,42,0.7), rgba(15,23,42,0.95)); }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -32,39 +31,33 @@
         function App() {
             const [settings, setSettings] = useState(null);
             const [inventory, setInventory] = useState([]);
-            const [cart, setCart] = useState([]);
             const [activeTab, setActiveTab] = useState('Todos');
+            const [cart, setCart] = useState([]);
 
             useEffect(() => {
                 const load = async () => {
                     const { data } = await supabaseClient.from('sagenav_data').select('*');
                     if (data) {
-                        setSettings(data.find(d => d.key === 'settings').value);
-                        setInventory(data.find(d => d.key === 'inventory').value);
+                        setSettings(data.find(d => d.key === 'settings')?.value);
+                        setInventory(data.find(d => d.key === 'inventory')?.value || []);
                     }
                 };
                 load();
             }, []);
 
-            const handleWhatsApp = () => {
-                const items = cart.map(i => `- ${i.name}`).join('%0A');
-                const msg = cart.length > 0 ? `Hola Doctor, me interesa:%0A${items}` : "Hola Doctor de la informatica, necesito una asesoría tecnológica.";
-                window.open(`https://wa.me/${settings?.whatsapp}?text=${msg}`);
-            };
-
-            if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse">SYSTEM.SAGENAV...</div>;
+            if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse">CARGANDO SYSTEM.SAGENAV...</div>;
 
             const filteredItems = activeTab === 'Todos' ? inventory : inventory.filter(i => i.category === activeTab);
 
             return (
                 <div className="min-h-screen flex flex-col">
-                    {/* NAV */}
+                    {/* NAVEGACIÓN */}
                     <nav className="glass sticky top-0 z-50 p-4 border-b flex justify-between items-center px-6 md:px-20">
                         <div className="flex flex-col">
-                            <span className="font-tech font-black text-blue-600 text-xl tracking-tighter italic">SYSTEM.SAGENAV</span>
-                            <span className="text-[8px] font-bold uppercase tracking-[0.3em] opacity-60">El Doctor de la informática</span>
+                            <span className="font-tech font-black text-blue-600 text-xl italic uppercase tracking-tighter">System.Sagenav</span>
+                            <span className="text-[8px] font-bold uppercase opacity-60 tracking-widest">Doctor de la informática</span>
                         </div>
-                        <div className="hidden md:flex gap-8 text-[10px] font-bold uppercase tracking-widest">
+                        <div className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest">
                             <button onClick={() => setActiveTab('Todos')} className={activeTab === 'Todos' ? 'text-blue-600 border-b-2 border-blue-600' : ''}>Inicio</button>
                             {settings.categories?.map(cat => (
                                 <button key={cat} onClick={() => setActiveTab(cat)} className={activeTab === cat ? 'text-blue-600 border-b-2 border-blue-600' : ''}>{cat}</button>
@@ -72,74 +65,66 @@
                         </div>
                     </nav>
 
-                    {/* HERO PRESENTATION */}
-                    <header className="relative h-[60vh] flex items-center justify-center text-white overflow-hidden">
-                        <img src={settings.bgImages?.[0]} className="absolute inset-0 w-full h-full object-cover" />
-                        <div className="absolute inset-0 hero-gradient"></div>
-                        <div className="relative z-10 text-center px-6 max-w-3xl animate-in fade-in zoom-in duration-700">
-                            <h2 className="text-blue-400 font-tech font-bold tracking-widest text-sm mb-4 uppercase">Soluciones Tecnológicas Integrales</h2>
-                            <h1 className="text-4xl md:text-7xl font-black font-tech italic mb-6 leading-tight uppercase">EL DOCTOR DE LA INFORMÁTICA</h1>
-                            <p className="text-slate-300 text-lg font-light italic">{settings.commercialDesc || "Mantenimiento especializado, software y hardware a tu medida."}</p>
+                    {/* PRESENTACIÓN (HERO) */}
+                    <header className="relative h-[60vh] flex items-center justify-center text-white text-center overflow-hidden">
+                        {settings.bgImages?.length > 0 ? (
+                            <img src={settings.bgImages[0]} className="absolute inset-0 w-full h-full object-cover" />
+                        ) : (
+                            <div className="absolute inset-0 bg-slate-900"></div>
+                        )}
+                        <div className="absolute inset-0 hero-overlay"></div>
+                        <div className="relative z-10 px-6">
+                            <h2 className="text-blue-400 font-tech text-xs tracking-[0.4em] mb-4 uppercase">Soluciones Tecnológicas</h2>
+                            <h1 className="text-4xl md:text-7xl font-black font-tech italic mb-4 uppercase">{settings.heroTitle}</h1>
+                            <p className="text-slate-300 italic text-sm md:text-lg max-w-2xl mx-auto">{settings.commercialDesc}</p>
                         </div>
                     </header>
 
-                    {/* CATEGORY TABS MOBILE */}
-                    <div className="md:hidden flex overflow-x-auto p-4 gap-4 bg-white border-b no-scrollbar">
-                        <button onClick={() => setActiveTab('Todos')} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${activeTab === 'Todos' ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>Todos</button>
+                    {/* PESTAÑAS MÓVIL */}
+                    <div className="md:hidden flex overflow-x-auto p-4 bg-white border-b gap-4 no-scrollbar">
+                        <button onClick={() => setActiveTab('Todos')} className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase whitespace-nowrap ${activeTab === 'Todos' ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>Todos</button>
                         {settings.categories?.map(cat => (
-                            <button key={cat} onClick={() => setActiveTab(cat)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${activeTab === cat ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>{cat}</button>
+                            <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase whitespace-nowrap ${activeTab === cat ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>{cat}</button>
                         ))}
                     </div>
 
-                    {/* PRODUCT GRID */}
-                    <main className="flex-grow max-w-7xl mx-auto p-6 md:p-20">
-                        <h3 className="text-2xl font-black uppercase italic mb-10 border-l-8 border-blue-600 pl-4">{activeTab}</h3>
+                    {/* CATÁLOGO */}
+                    <main className="max-w-7xl mx-auto p-6 md:p-20 flex-grow">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                             {filteredItems.map(item => (
-                                <div key={item.id} className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-200 hover:shadow-2xl transition-all duration-300 group">
-                                    <div className="h-56 overflow-hidden relative">
-                                        <img src={item.img || 'https://via.placeholder.com/400x300?text=System.Sagenav'} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                        <div className="absolute top-4 left-4 bg-blue-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase">{item.category}</div>
-                                    </div>
-                                    <div className="p-8">
-                                        <h4 className="font-black text-xl uppercase mb-1">{item.name}</h4>
-                                        <p className="text-blue-600 font-black text-2xl mb-6">${item.price?.toLocaleString()}</p>
-                                        <button onClick={() => setCart([...cart, item])} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-xs hover:bg-blue-600 transition-colors flex items-center justify-center gap-2">
-                                            Añadir al pedido <i data-lucide="plus" size={14}></i>
-                                        </button>
+                                <div key={item.id} className="bg-white rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all">
+                                    {item.img && <img src={item.img} className="w-full h-48 object-cover" />}
+                                    <div className="p-6">
+                                        <span className="text-[8px] font-black text-blue-600 uppercase tracking-widest">{item.category}</span>
+                                        <h4 className="font-black text-lg uppercase mb-2">{item.name}</h4>
+                                        <p className="text-2xl font-black mb-4">${item.price?.toLocaleString()}</p>
+                                        <button onClick={() => setCart([...cart, item])} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-blue-600">Añadir al pedido</button>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </main>
 
-                    {/* FOOTER */}
-                    <footer className="bg-slate-900 text-slate-400 p-10 md:p-20 border-t border-slate-800">
-                        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12">
+                    {/* PIE DE PÁGINA (FOOTER) */}
+                    <footer className="bg-slate-900 text-slate-400 p-10 md:p-20 text-center md:text-left">
+                        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10">
                             <div className="space-y-4">
-                                <span className="font-tech font-black text-white text-2xl italic">SYSTEM.SAGENAV</span>
-                                <p className="text-xs leading-relaxed italic">{settings.footerText}</p>
+                                <span className="font-tech font-black text-white text-xl italic uppercase tracking-tighter">System.Sagenav</span>
+                                <p className="text-xs italic leading-relaxed">{settings.footerText || "Soporte avanzado y mantenimiento técnico."}</p>
                             </div>
-                            <div className="space-y-2 text-xs uppercase font-bold tracking-widest">
-                                <h5 className="text-white mb-4">Contacto Directo</h5>
-                                <p className="flex items-center gap-2"><i data-lucide="map-pin" size={14}></i> {settings.personalAddress}</p>
-                                <p className="flex items-center gap-2"><i data-lucide="mail" size={14}></i> {settings.personalEmail}</p>
-                                <p className="flex items-center gap-2"><i data-lucide="phone" size={14}></i> {settings.whatsapp}</p>
-                            </div>
-                            <div className="text-xs">
-                                <p>© {new Date().getFullYear()} - El Doctor de la informática. Todos los derechos reservados.</p>
+                            <div className="text-[10px] font-bold uppercase tracking-widest space-y-2">
+                                <p className="text-white mb-4 italic">Contacto</p>
+                                <p>Dirección: {settings.personalAddress}</p>
+                                <p>Email: {settings.personalEmail}</p>
+                                <p>WhatsApp: +{settings.whatsapp}</p>
                             </div>
                         </div>
                     </footer>
 
-                    {/* WHATSAPP FLOAT BUTTON */}
-                    <button onClick={handleWhatsApp} className="fixed bottom-8 right-8 bg-[#25D366] text-white p-4 rounded-full shadow-[0_10px_40px_rgba(37,211,102,0.4)] z-50 flex items-center gap-3 hover:scale-110 transition-transform active:scale-95 group">
-                        <div className="flex flex-col items-end hidden group-hover:flex">
-                             <span className="text-[10px] font-black uppercase tracking-tighter leading-none">Habla con el</span>
-                             <span className="text-xs font-black uppercase leading-none">Doctor de la informatica ahora</span>
-                        </div>
-                        <i data-lucide="message-circle" size={32} fill="white"></i>
-                        {cart.length > 0 && <span className="absolute -top-2 -left-2 bg-red-600 text-white text-[10px] font-black w-6 h-6 rounded-full border-2 border-white flex items-center justify-center">{cart.length}</span>}
+                    {/* WHATSAPP BUTTON CON LOGO */}
+                    <button onClick={() => window.open(`https://wa.me/${settings.whatsapp}`)} className="fixed bottom-8 right-8 bg-[#25D366] text-white p-4 rounded-full shadow-2xl z-50 flex items-center gap-2 hover:scale-110 transition-transform">
+                        <i data-lucide="message-circle" fill="white"></i>
+                        <span className="font-bold text-xs pr-2">Hablar con el Doctor de la informatica</span>
                     </button>
                 </div>
             );
