@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin System.Sagenav</title>
+    <title>Admin - System.Sagenav</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -15,10 +15,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
-        .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #e2e8f0; }
-        .tab-active { border-bottom: 4px solid #3b82f6; color: #3b82f6; font-weight: 900; }
+        .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .tab-active { border-bottom: 4px solid #2563eb; color: #2563eb; font-weight: 900; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -28,6 +28,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // --- TUS LLAVES ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
@@ -37,7 +38,7 @@
             const [adminTab, setAdminTab] = useState('billing');
             const [loading, setLoading] = useState(true);
 
-            // DATOS (Incluye nuevos campos para Redes, Email y Logo Web)
+            // DATOS
             const [settings, setSettings] = useState({
                 heroTitle: "SYSTEM.SAGENAV", commercialDesc: "", footerText: "",
                 whatsapp: "", categories: ["Servicios", "Productos"],
@@ -48,6 +49,7 @@
             const [inventory, setInventory] = useState([]);
             const [sales, setSales] = useState([]);
 
+            // FORMULARIOS
             const [newItem, setNewItem] = useState({ name: "", price: "", category: "Servicios", onDemand: false, img: "" });
             const [billClient, setBillClient] = useState({ name: "", nit: "", date: new Date().toISOString().split('T')[0] });
             const [billItems, setBillItems] = useState([]);
@@ -102,10 +104,10 @@
                 if (!file) return;
                 const base64 = await compressImage(file);
                 if (type === 'prod') setNewItem({...newItem, img: base64});
-                if (type === 'logo') setSettings({...settings, personalLogo: base64}); // Logo para PDF
-                if (type === 'navLogo') setSettings({...settings, navLogo: base64});    // Logo para Web
+                if (type === 'logo') setSettings({...settings, personalLogo: base64});
+                if (type === 'navLogo') setSettings({...settings, navLogo: base64});
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                alert("Imagen procesada. Recuerda GUARDAR NUBE.");
+                alert("Imagen lista. Pulsa GUARDAR NUBE.");
             };
 
             const saveEverything = async () => {
@@ -115,19 +117,17 @@
                 if (!e1 && !e2 && !e3) alert("✅ Guardado Exitoso"); else alert("❌ Error");
             };
 
-            const generatePDF = () => {
+            // --- 1. GENERAR FACTURA INDIVIDUAL ---
+            const generateInvoicePDF = () => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
                 
-                // En el PDF SÍ mostramos el NIT/CC porque es un documento legal
                 doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SAGENAV", 45, 20);
                 doc.setFontSize(8).setFont("helvetica", "normal").text(`NIT/CC: ${settings.personalId || ''} | ${settings.personalAddress || ''}`, 45, 26);
                 if(settings.personalRut) doc.text(`RUT: ${settings.personalRut}`, 45, 31);
-                doc.text(`Email: ${settings.publicEmail || ''} | Tel: ${settings.whatsapp || ''}`, 45, 36);
 
                 doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 55, { align: "center" });
-                
                 doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 70);
                 doc.text(`NIT/CC: ${billClient.nit}`, 15, 75);
                 doc.text(`FECHA: ${billClient.date}`, 160, 70);
@@ -142,6 +142,24 @@
                 setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
             };
 
+            // --- 2. GENERAR REPORTE DE VENTAS (NUEVO) ---
+            const generateReportPDF = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const filtered = sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day));
+                
+                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE DE VENTAS - SYSTEM.SAGENAV", 105, 20, { align: "center" });
+                doc.setFontSize(10).setFont("helvetica", "normal").text(`Filtro: ${reportFilter.year}-${reportFilter.month || 'Todo'}-${reportFilter.day || 'Todo'}`, 15, 30);
+                
+                const tableBody = filtered.map(s => [s.date, s.concept.toUpperCase(), `$${s.amount.toLocaleString()}`]);
+                doc.autoTable({ startY: 40, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: tableBody });
+                
+                const total = filtered.reduce((acc, s) => acc + s.amount, 0);
+                doc.setFont("helvetica", "bold").text(`TOTAL PERIODO: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
+                doc.save(`Reporte_Sagenav_${reportFilter.year}.pdf`);
+            };
+
+            // --- GRÁFICAS ---
             useEffect(() => {
                 if (authorized && adminTab === 'reports' && chartRef.current) {
                     if (myChart.current) myChart.current.destroy();
@@ -149,110 +167,150 @@
                     myChart.current = new Chart(chartRef.current, {
                         type: 'bar',
                         data: {
-                            labels: filtered.slice(0, 10).map(s => s.date),
-                            datasets: [{ label: 'Ventas', data: filtered.slice(0, 10).map(s => s.amount), backgroundColor: '#3b82f6' }]
+                            labels: filtered.slice(0, 15).map(s => s.date),
+                            datasets: [{ label: 'Ingresos', data: filtered.slice(0, 15).map(s => s.amount), backgroundColor: '#3b82f6' }]
                         }
                     });
                 }
                 if(authorized) setTimeout(() => lucide.createIcons(), 500);
             }, [adminTab, sales, authorized, reportFilter]);
 
-            if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Cargando Doctor...</div>;
+            if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Cargando Sistema...</div>;
 
             return (
                 <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
-                    <header className="flex justify-between items-center mb-10 bg-slate-900 p-8 rounded-[2rem] text-white">
-                        <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
-                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs">GUARDAR NUBE</button>
+                    <header className="flex flex-col md:flex-row justify-between items-center mb-10 bg-slate-900 p-8 rounded-[2rem] text-white shadow-xl">
+                        <div className="flex items-center gap-4">
+                            {settings.navLogo && <img src={settings.navLogo} className="w-12 h-12 rounded-full border-2 border-blue-500"/>}
+                            <div>
+                                <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
+                                <p className="text-[9px] uppercase tracking-widest opacity-60">Panel Administrativo</p>
+                            </div>
+                        </div>
+                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
                     </header>
 
-                    <nav className="flex gap-8 mb-8 border-b text-[10px] font-black uppercase tracking-widest">
+                    <nav className="flex gap-8 mb-8 border-b overflow-x-auto pb-4 no-scrollbar text-[10px] font-black uppercase tracking-widest">
                         {['billing', 'inventory', 'reports', 'config'].map(t => (
-                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-4':'pb-4'}>{t}</button>
+                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-4':'pb-4 opacity-50'}>{t}</button>
                         ))}
                     </nav>
 
+                    {/* VISTA: FACTURACIÓN */}
                     {adminTab === 'billing' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Facturación PDF</h3>
-                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
-                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
-                                <select className="w-full p-3 border rounded-xl" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
-                                    <option value="">Añadir Ítem...</option>
-                                    {inventory.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Generar Cuenta de Cobro</h3>
+                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl bg-slate-50" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
+                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl bg-slate-50" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
+                                <input type="date" className="w-full p-3 border rounded-xl bg-slate-50 font-bold text-sm" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
+                                <select className="w-full p-3 border rounded-xl bg-slate-50 text-sm" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
+                                    <option value="">Añadir ítem del inventario...</option>
+                                    {inventory.map(i=><option key={i.id} value={i.id}>{i.name} - ${i.price}</option>)}
                                 </select>
-                                <button onClick={generatePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">DESCARGAR PDF</button>
+                                <div className="flex gap-2">
+                                    <input placeholder="Manual..." className="flex-grow p-3 border rounded-xl bg-slate-50 text-sm" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
+                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl bg-slate-50 text-sm" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
+                                </div>
+                                <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF</button>
                             </div>
-                            <div className="admin-card">
+                            <div className="admin-card overflow-y-auto">
+                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle</h3>
                                 {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase italic font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500">×</button></div>))}
+                                {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase italic font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
                             </div>
                         </div>
                     )}
 
+                    {/* VISTA: REPORTES (CON PDF Y FILTROS) */}
                     {adminTab === 'reports' && (
-                        <div className="space-y-6">
-                            <div className="flex gap-4 bg-white p-4 rounded-2xl border">
-                                <input placeholder="Año" className="p-2 border rounded-lg text-xs" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
-                                <input placeholder="Mes" className="p-2 border rounded-lg text-xs" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} />
-                                <input placeholder="Día" className="p-2 border rounded-lg text-xs" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} />
-                                <button onClick={()=>setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 text-[10px] font-bold uppercase rounded-lg">Limpiar</button>
+                        <div className="space-y-6 animate-in fade-in">
+                            <div className="flex flex-wrap gap-4 bg-white p-4 rounded-2xl border items-center">
+                                <span className="text-[10px] font-bold uppercase opacity-40">Filtros:</span>
+                                <input placeholder="Año (2025)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
+                                <input placeholder="Mes (01-12)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} />
+                                <input placeholder="Día (01-31)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} />
+                                <button onClick={()=>setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 px-3 py-2 rounded font-bold text-[10px]">LIMPIAR</button>
+                                <button onClick={generateReportPDF} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-[10px] flex items-center gap-2 ml-auto"><i data-lucide="file-down" size={14}></i> PDF REPORTE</button>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="admin-card md:col-span-2"><canvas ref={chartRef}></canvas></div>
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <div className="admin-card lg:col-span-2"><canvas ref={chartRef}></canvas></div>
                                 <div className="admin-card overflow-y-auto max-h-[400px]">
-                                    {sales.map(s => (<div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase">{s.date} - {s.concept} <b className="text-emerald-600">${s.amount.toLocaleString()}</b></div>))}
+                                    {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => (
+                                        <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase">{s.date} - {s.concept} <b className="text-emerald-600">${s.amount.toLocaleString()}</b></div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
                     )}
 
+                    {/* VISTA: INVENTARIO (AGREGAR CATEGORÍA Y ENCARGO AQUÍ MISMO) */}
                     {adminTab === 'inventory' && (
-                        <div className="admin-card">
+                        <div className="admin-card animate-in fade-in">
                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                <input placeholder="Nombre" className="p-3 border rounded-xl" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
-                                <input placeholder="Precio" type="number" className="p-3 border rounded-xl" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
-                                <select className="p-3 border rounded-xl font-bold" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
-                                    {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase p-3 rounded-xl bg-slate-100"><input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> ¿Encargo?</label>
+                                <input placeholder="Nombre Ítem" className="p-3 border rounded-xl bg-slate-50 text-xs" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
+                                <input placeholder="Precio" type="number" className="p-3 border rounded-xl bg-slate-50 text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
+                                <div className="flex gap-2">
+                                    <select className="flex-grow p-3 border rounded-xl font-bold bg-slate-50 text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
+                                        {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <button onClick={()=>{
+                                        const c = prompt("Nombre de nueva Categoría:");
+                                        if(c) setSettings({...settings, categories:[...settings.categories, c]});
+                                    }} className="bg-slate-200 px-3 rounded-xl font-bold">+</button>
+                                </div>
+                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase p-3 rounded-xl bg-slate-100 cursor-pointer">
+                                    <input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} />
+                                    ¿Solo Encargo?
+                                </label>
                             </div>
-                            <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px] mb-4" />
-                            <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs w-full">Agregar</button>
+                            <div className="flex items-center gap-4 border-t pt-4">
+                                <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
+                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs w-full">AGREGAR AL CATÁLOGO</button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
+                                {inventory.map(i=>(
+                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group">
+                                        <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100 transition"><i data-lucide="trash-2" size={14}></i></button>
+                                        <p className="text-[8px] font-black uppercase opacity-30">{i.category}</p>
+                                        {i.onDemand && <p className="text-[8px] text-orange-500 font-bold uppercase bg-orange-100 inline-block px-1 rounded">ENCARGO</p>}
+                                        <p className="font-bold text-[10px] uppercase truncate mt-1">{i.name}</p>
+                                        <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
+                    {/* VISTA: CONFIGURACIÓN (PIE DE PÁGINA Y PRIVACIDAD) */}
                     {adminTab === 'config' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
                                 <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados (PDF Facturación)</h3>
-                                <input placeholder="Tu Nombre / Empresa" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
-                                <input placeholder="NIT / Cédula (Solo para PDF)" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} title="Este dato NO saldrá en la web pública" />
-                                <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
-                                <input placeholder="RUT (Opcional)" className="w-full p-3 border rounded-xl text-xs" value={settings.personalRut} onChange={e=>setSettings({...settings, personalRut:e.target.value})} />
-                                <div className="pt-2"><label className="text-[10px] opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div>
+                                <input placeholder="Tu Nombre / Razón Social" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
+                                <input placeholder="NIT / Cédula (NO sale en web)" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
+                                <input placeholder="Dirección Física" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
+                                <input placeholder="RUT (Opcional)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.personalRut} onChange={e=>setSettings({...settings, personalRut:e.target.value})} />
+                                <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div>
                             </div>
                             <div className="admin-card space-y-4">
                                 <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos (Web)</h3>
-                                <input placeholder="Eslogan (Hero)" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
-                                <input placeholder="Email de Contacto" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
-                                <input placeholder="WhatsApp (57...)" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
-                                <textarea placeholder="Texto Pie de Página (Footer)" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
+                                <input placeholder="Eslogan (Hero)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
+                                <input placeholder="Email Contacto" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
+                                <input placeholder="WhatsApp (57...)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
+                                <textarea placeholder="Texto Pie de Página (Footer)" className="w-full p-3 border rounded-xl h-20 text-xs bg-slate-50" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
                                 
-                                <div className="pt-2 border-t">
-                                    <h4 className="text-[10px] font-bold uppercase opacity-60 mb-2">Redes Sociales (URLs)</h4>
-                                    <input placeholder="Instagram Link" className="w-full p-2 border rounded-lg text-xs mb-2" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
-                                    <input placeholder="Facebook Link" className="w-full p-2 border rounded-lg text-xs mb-2" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
-                                    <input placeholder="TikTok Link" className="w-full p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
+                                <div className="pt-2 border-t space-y-2">
+                                    <h4 className="text-[10px] font-bold uppercase opacity-60">Redes Sociales (Pegar Links)</h4>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <input placeholder="Facebook URL" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
+                                        <input placeholder="Instagram URL" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
+                                        <input placeholder="TikTok URL" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
+                                    </div>
                                 </div>
-                                
-                                <div className="pt-2 border-t">
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mb-1">Logo Web (Junto al Nombre):</label>
-                                    <input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
-                                </div>
-                                <div className="pt-2 border-t">
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mb-1">Carrusel:</label>
-                                    <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" />
+                                <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                                    <div><label className="text-[10px] font-bold uppercase opacity-50">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" /></div>
+                                    <div><label className="text-[10px] font-bold uppercase opacity-50">Carrusel:</label><input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" /></div>
                                 </div>
                             </div>
                         </div>
