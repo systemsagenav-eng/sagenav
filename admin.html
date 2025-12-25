@@ -15,10 +15,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
-        .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        .tab-active { border-bottom: 4px solid #2563eb; color: #2563eb; font-weight: 900; }
+        .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        .tab-active { border-bottom: 4px solid #3b82f6; color: #3b82f6; font-weight: 900; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -117,7 +117,6 @@
                 if (!e1 && !e2 && !e3) alert("✅ Guardado Exitoso"); else alert("❌ Error");
             };
 
-            // --- 1. GENERAR FACTURA INDIVIDUAL ---
             const generateInvoicePDF = () => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
@@ -126,6 +125,7 @@
                 doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SAGENAV", 45, 20);
                 doc.setFontSize(8).setFont("helvetica", "normal").text(`NIT/CC: ${settings.personalId || ''} | ${settings.personalAddress || ''}`, 45, 26);
                 if(settings.personalRut) doc.text(`RUT: ${settings.personalRut}`, 45, 31);
+                doc.text(`Email: ${settings.publicEmail || ''} | Tel: ${settings.whatsapp || ''}`, 45, 36);
 
                 doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 55, { align: "center" });
                 doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 70);
@@ -142,24 +142,22 @@
                 setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
             };
 
-            // --- 2. GENERAR REPORTE DE VENTAS (NUEVO) ---
             const generateReportPDF = () => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 const filtered = sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day));
                 
-                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE DE VENTAS - SYSTEM.SAGENAV", 105, 20, { align: "center" });
-                doc.setFontSize(10).setFont("helvetica", "normal").text(`Filtro: ${reportFilter.year}-${reportFilter.month || 'Todo'}-${reportFilter.day || 'Todo'}`, 15, 30);
+                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE DE VENTAS", 105, 20, { align: "center" });
+                doc.setFontSize(10).setFont("helvetica", "normal").text(`Periodo: ${reportFilter.year}-${reportFilter.month || 'Todos'}-${reportFilter.day || 'Todos'}`, 15, 30);
                 
                 const tableBody = filtered.map(s => [s.date, s.concept.toUpperCase(), `$${s.amount.toLocaleString()}`]);
                 doc.autoTable({ startY: 40, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: tableBody });
                 
                 const total = filtered.reduce((acc, s) => acc + s.amount, 0);
-                doc.setFont("helvetica", "bold").text(`TOTAL PERIODO: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
-                doc.save(`Reporte_Sagenav_${reportFilter.year}.pdf`);
+                doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
+                doc.save(`Reporte_Ventas.pdf`);
             };
 
-            // --- GRÁFICAS ---
             useEffect(() => {
                 if (authorized && adminTab === 'reports' && chartRef.current) {
                     if (myChart.current) myChart.current.destroy();
@@ -168,7 +166,7 @@
                         type: 'bar',
                         data: {
                             labels: filtered.slice(0, 15).map(s => s.date),
-                            datasets: [{ label: 'Ingresos', data: filtered.slice(0, 15).map(s => s.amount), backgroundColor: '#3b82f6' }]
+                            datasets: [{ label: 'Ventas', data: filtered.slice(0, 15).map(s => s.amount), backgroundColor: '#3b82f6' }]
                         }
                     });
                 }
@@ -184,7 +182,7 @@
                             {settings.navLogo && <img src={settings.navLogo} className="w-12 h-12 rounded-full border-2 border-blue-500"/>}
                             <div>
                                 <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
-                                <p className="text-[9px] uppercase tracking-widest opacity-60">Panel Administrativo</p>
+                                <p className="text-[9px] uppercase tracking-widest opacity-60">Command Center</p>
                             </div>
                         </div>
                         <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
@@ -205,7 +203,7 @@
                                 <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl bg-slate-50" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
                                 <input type="date" className="w-full p-3 border rounded-xl bg-slate-50 font-bold text-sm" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
                                 <select className="w-full p-3 border rounded-xl bg-slate-50 text-sm" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
-                                    <option value="">Añadir ítem del inventario...</option>
+                                    <option value="">Añadir ítem...</option>
                                     {inventory.map(i=><option key={i.id} value={i.id}>{i.name} - ${i.price}</option>)}
                                 </select>
                                 <div className="flex gap-2">
@@ -214,15 +212,29 @@
                                 </div>
                                 <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF</button>
                             </div>
-                            <div className="admin-card overflow-y-auto">
-                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle</h3>
-                                {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase italic font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500">×</button></div>))}
-                                {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase italic font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
+                            <div className="admin-card flex flex-col h-full">
+                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Resumen</h3>
+                                <div className="flex-grow space-y-2 overflow-y-auto max-h-[300px]">
+                                    {billItems.map((it, idx)=>(
+                                        <div key={idx} className="flex justify-between border-b py-2 text-xs uppercase italic font-bold">
+                                            <span>{it.name}</span>
+                                            <div className="flex gap-2 items-center">
+                                                <span>${it.price.toLocaleString()}</span>
+                                                <button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 rounded p-1"><i data-lucide="x" size={12}></i></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase italic font-bold text-blue-600"><span>{manualItem.desc}</span> <span>${parseInt(manualItem.price||0).toLocaleString()}</span></div>}
+                                </div>
+                                <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase">
+                                    <span>Total:</span>
+                                    <span className="text-emerald-600">${(billItems.reduce((a,b)=>a+b.price,0) + parseInt(manualItem.price||0)).toLocaleString()}</span>
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* VISTA: REPORTES (CON PDF Y FILTROS) */}
+                    {/* VISTA: REPORTES */}
                     {adminTab === 'reports' && (
                         <div className="space-y-6 animate-in fade-in">
                             <div className="flex flex-wrap gap-4 bg-white p-4 rounded-2xl border items-center">
@@ -236,15 +248,21 @@
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 <div className="admin-card lg:col-span-2"><canvas ref={chartRef}></canvas></div>
                                 <div className="admin-card overflow-y-auto max-h-[400px]">
-                                    {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => (
-                                        <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase">{s.date} - {s.concept} <b className="text-emerald-600">${s.amount.toLocaleString()}</b></div>
+                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Lista de Ventas</h3>
+                                    {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).length === 0 
+                                        ? <p className="text-xs opacity-50 italic">No hay datos.</p> 
+                                        : sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => (
+                                        <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between">
+                                            <span>{s.date} - {s.concept}</span>
+                                            <b className="text-emerald-600">${s.amount.toLocaleString()}</b>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* VISTA: INVENTARIO (AGREGAR CATEGORÍA Y ENCARGO AQUÍ MISMO) */}
+                    {/* VISTA: INVENTARIO */}
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -254,23 +272,19 @@
                                     <select className="flex-grow p-3 border rounded-xl font-bold bg-slate-50 text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
                                         {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
-                                    <button onClick={()=>{
-                                        const c = prompt("Nombre de nueva Categoría:");
-                                        if(c) setSettings({...settings, categories:[...settings.categories, c]});
-                                    }} className="bg-slate-200 px-3 rounded-xl font-bold">+</button>
+                                    <button onClick={()=>{const c = prompt("Nombre de nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 rounded-xl font-bold hover:bg-slate-300">+</button>
                                 </div>
                                 <label className="flex items-center gap-2 text-[10px] font-bold uppercase p-3 rounded-xl bg-slate-100 cursor-pointer">
-                                    <input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} />
-                                    ¿Solo Encargo?
+                                    <input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> ¿Solo Encargo?
                                 </label>
                             </div>
                             <div className="flex items-center gap-4 border-t pt-4">
                                 <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
-                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs w-full">AGREGAR AL CATÁLOGO</button>
+                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs w-full hover:bg-blue-700 transition">AGREGAR AL CATÁLOGO</button>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
                                 {inventory.map(i=>(
-                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group">
+                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group hover:shadow-md transition">
                                         <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100 transition"><i data-lucide="trash-2" size={14}></i></button>
                                         <p className="text-[8px] font-black uppercase opacity-30">{i.category}</p>
                                         {i.onDemand && <p className="text-[8px] text-orange-500 font-bold uppercase bg-orange-100 inline-block px-1 rounded">ENCARGO</p>}
@@ -282,7 +296,7 @@
                         </div>
                     )}
 
-                    {/* VISTA: CONFIGURACIÓN (PIE DE PÁGINA Y PRIVACIDAD) */}
+                    {/* VISTA: CONFIGURACIÓN */}
                     {adminTab === 'config' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
@@ -301,16 +315,26 @@
                                 <textarea placeholder="Texto Pie de Página (Footer)" className="w-full p-3 border rounded-xl h-20 text-xs bg-slate-50" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
                                 
                                 <div className="pt-2 border-t space-y-2">
-                                    <h4 className="text-[10px] font-bold uppercase opacity-60">Redes Sociales (Pegar Links)</h4>
+                                    <h4 className="text-[10px] font-bold uppercase opacity-60">Redes Sociales (Links)</h4>
                                     <div className="grid grid-cols-3 gap-2">
-                                        <input placeholder="Facebook URL" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
-                                        <input placeholder="Instagram URL" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
-                                        <input placeholder="TikTok URL" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
+                                        <input placeholder="Facebook" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
+                                        <input placeholder="Instagram" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
+                                        <input placeholder="TikTok" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 pt-2 border-t">
-                                    <div><label className="text-[10px] font-bold uppercase opacity-50">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" /></div>
-                                    <div><label className="text-[10px] font-bold uppercase opacity-50">Carrusel:</label><input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" /></div>
+                                <div className="pt-2 border-t">
+                                    <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel (Clic en X para borrar):</label>
+                                    <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+                                        {settings.bgImages?.map((img, i) => (
+                                            <div key={i} className="relative group flex-shrink-0">
+                                                <img src={img} className="w-16 h-12 object-cover rounded border" />
+                                                <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[8px] flex items-center justify-center shadow-md">x</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" />
+                                    <label className="text-[10px] font-bold uppercase opacity-50 block mt-4 mb-1">Logo Web:</label>
+                                    <input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
                                 </div>
                             </div>
                         </div>
