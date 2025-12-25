@@ -15,8 +15,9 @@
         body { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
         .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
-        .hero-overlay { background: linear-gradient(to bottom, rgba(15,23,42,0.6), rgba(15,23,42,0.9)); }
-        .fade-in-out { transition: opacity 1.5s ease-in-out; }
+        .hero-overlay { background: linear-gradient(to bottom, rgba(15,23,42,0.6), rgba(15,23,42,0.95)); }
+        .fade-img { transition: opacity 1.5s ease-in-out; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -47,93 +48,97 @@
                 load();
             }, []);
 
-            // Lógica del Carrusel Rotativo
+            // Lógica Carrusel
             useEffect(() => {
                 if (settings?.bgImages?.length > 1) {
-                    const timer = setInterval(() => {
-                        setCurrentImg(prev => (prev + 1) % settings.bgImages.length);
-                    }, 5000);
+                    const timer = setInterval(() => setCurrentImg(p => (p + 1) % settings.bgImages.length), 5000);
                     return () => clearInterval(timer);
                 }
             }, [settings]);
 
-            if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse text-blue-600 uppercase">System.Sagenav...</div>;
+            if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse text-blue-600">SAGENAV CARGANDO...</div>;
 
             const filteredItems = activeTab === 'Todos' ? inventory : inventory.filter(i => i.category === activeTab);
 
             return (
                 <div className="min-h-screen flex flex-col">
+                    {/* NAV CON PESTAÑAS */}
                     <nav className="glass sticky top-0 z-50 p-4 border-b flex justify-between items-center px-6 md:px-20">
                         <div className="flex flex-col">
                             <span className="font-tech font-black text-blue-600 text-xl italic uppercase tracking-tighter">System.Sagenav</span>
-                            <span className="text-[8px] font-bold uppercase opacity-60 tracking-widest">El Doctor de la informática</span>
+                            <span className="text-[8px] font-bold uppercase opacity-60">Doctor de la informática</span>
                         </div>
                         <div className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest">
-                            <button onClick={() => setActiveTab('Todos')} className={activeTab === 'Todos' ? 'text-blue-600 border-b-2 border-blue-600' : ''}>Inicio</button>
+                            <button onClick={() => setActiveTab('Todos')} className={activeTab === 'Todos' ? 'text-blue-600 border-b-2 border-blue-600 pb-1' : 'pb-1'}>Inicio</button>
                             {settings.categories?.map(cat => (
-                                <button key={cat} onClick={() => setActiveTab(cat)} className={activeTab === cat ? 'text-blue-600 border-b-2 border-blue-600' : ''}>{cat}</button>
+                                <button key={cat} onClick={() => setActiveTab(cat)} className={activeTab === cat ? 'text-blue-600 border-b-2 border-blue-600 pb-1' : 'pb-1'}>{cat}</button>
                             ))}
                         </div>
                     </nav>
 
-                    {/* HERO CON CARRUSEL ROTATIVO */}
-                    <header className="relative h-[65vh] flex items-center justify-center text-white text-center overflow-hidden">
+                    {/* HERO ROTATIVO */}
+                    <header className="relative h-[60vh] flex items-center justify-center text-white text-center overflow-hidden bg-slate-900">
                         {settings.bgImages?.map((img, idx) => (
-                            <img key={idx} src={img} className={`absolute inset-0 w-full h-full object-cover fade-in-out ${idx === currentImg ? 'opacity-100' : 'opacity-0'}`} />
+                            <img key={idx} src={img} className={`absolute inset-0 w-full h-full object-cover fade-img ${idx === currentImg ? 'opacity-100' : 'opacity-0'}`} />
                         ))}
                         <div className="absolute inset-0 hero-overlay"></div>
-                        <div className="relative z-10 px-6 max-w-4xl animate-in fade-in duration-1000">
-                            <h2 className="text-blue-400 font-tech text-[10px] tracking-[0.4em] mb-4 uppercase">Soluciones Tecnológicas Especializadas</h2>
-                            <h1 className="text-4xl md:text-7xl font-black font-tech italic mb-4 uppercase leading-none">{settings.heroTitle}</h1>
-                            <p className="text-slate-200 italic text-sm md:text-xl font-light">{settings.commercialDesc}</p>
+                        <div className="relative z-10 px-6">
+                            <h2 className="text-blue-400 font-tech text-[10px] tracking-[0.4em] mb-4 uppercase">Soluciones Tecnológicas</h2>
+                            <h1 className="text-4xl md:text-7xl font-black font-tech italic mb-4 uppercase">{settings.heroTitle}</h1>
+                            <p className="text-slate-300 italic text-sm md:text-lg max-w-2xl mx-auto">{settings.commercialDesc}</p>
                         </div>
                     </header>
 
+                    {/* PESTAÑAS MÓVIL */}
+                    <div className="md:hidden flex overflow-x-auto p-4 bg-white border-b gap-4 no-scrollbar">
+                        <button onClick={() => setActiveTab('Todos')} className={`px-4 py-2 rounded-full text-[9px] font-bold uppercase whitespace-nowrap ${activeTab === 'Todos' ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>Todos</button>
+                        {settings.categories?.map(cat => (
+                            <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 py-2 rounded-full text-[9px] font-bold uppercase whitespace-nowrap ${activeTab === cat ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>{cat}</button>
+                        ))}
+                    </div>
+
+                    {/* CATÁLOGO */}
                     <main className="max-w-7xl mx-auto p-6 md:p-20 flex-grow">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
                             {filteredItems.map(item => (
-                                <div key={item.id} className="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm hover:shadow-2xl transition-all group">
-                                    <div className="relative h-60">
-                                        {item.img && <img src={item.img} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />}
+                                <div key={item.id} className="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm hover:shadow-xl transition-all">
+                                    <div className="relative h-56">
+                                        {item.img && <img src={item.img} className="w-full h-full object-cover" />}
                                         <div className="absolute top-4 left-4 flex gap-2">
                                             <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase">{item.category}</span>
-                                            {item.onDemand && (
-                                                <span className="bg-orange-500 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase animate-pulse">Solo por Encargo</span>
-                                            )}
+                                            {item.onDemand && <span className="bg-orange-500 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase">Por Encargo</span>}
                                         </div>
                                     </div>
                                     <div className="p-8">
                                         <h4 className="font-black text-xl uppercase mb-1">{item.name}</h4>
                                         <p className="text-blue-600 font-black text-2xl mb-6">${item.price?.toLocaleString()}</p>
-                                        <button onClick={() => setCart([...cart, item])} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-2 hover:bg-blue-600 transition-colors">
-                                            Añadir al pedido <i data-lucide="plus-circle" size={14}></i>
-                                        </button>
+                                        <button onClick={() => setCart([...cart, item])} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest hover:bg-blue-600">Añadir pedido</button>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </main>
 
-                    <footer className="bg-slate-900 text-slate-500 p-10 md:p-20 border-t border-slate-800">
+                    {/* PIE DE PÁGINA (Sincronizado) */}
+                    <footer className="bg-slate-900 text-slate-400 p-10 md:p-20 border-t border-slate-800">
                         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10">
                             <div className="space-y-4">
-                                <span className="font-tech font-black text-white text-2xl italic uppercase tracking-tighter">System.Sagenav</span>
-                                <p className="text-xs italic leading-relaxed max-w-sm">{settings.footerText}</p>
+                                <span className="font-tech font-black text-white text-xl italic uppercase tracking-tighter">System.Sagenav</span>
+                                <p className="text-xs italic leading-relaxed max-w-sm">{settings.footerText || "El Doctor de la informática a tu servicio."}</p>
                             </div>
                             <div className="text-[10px] font-bold uppercase tracking-widest space-y-3">
-                                <p className="text-white mb-4 border-l-4 border-blue-600 pl-2">Información de contacto</p>
-                                <p className="flex items-center gap-2"><i data-lucide="map-pin" size={14}></i> {settings.personalAddress}</p>
-                                <p className="flex items-center gap-2"><i data-lucide="mail" size={14}></i> {settings.personalEmail}</p>
-                                <p className="flex items-center gap-2"><i data-lucide="phone" size={14}></i> +{settings.whatsapp}</p>
+                                <p className="text-white mb-4 border-l-2 border-blue-600 pl-2 italic">Contacto Directo</p>
+                                <p>Dirección: {settings.personalAddress}</p>
+                                <p>WhatsApp: +{settings.whatsapp}</p>
+                                <p>NIT: {settings.personalId}</p>
                             </div>
                         </div>
-                        <div className="mt-20 text-center text-[10px] opacity-30">© {new Date().getFullYear()} El Doctor de la Informática.</div>
                     </footer>
 
-                    <button onClick={() => window.open(`https://wa.me/${settings.whatsapp}?text=Hola Doctor, me interesan tus servicios tecnológicos.`)} className="fixed bottom-8 right-8 bg-[#25D366] text-white p-4 rounded-full shadow-[0_10px_40px_rgba(37,211,102,0.4)] z-50 flex items-center gap-3 hover:scale-110 transition-transform active:scale-95 group">
-                         <span className="hidden group-hover:block text-[10px] font-black uppercase tracking-tighter pl-2">¿Necesitas ayuda técnica?</span>
-                         <i data-lucide="message-circle" size={32} fill="white"></i>
-                         {cart.length > 0 && <span className="absolute -top-2 -left-2 bg-red-600 text-white text-[10px] font-black w-6 h-6 rounded-full border-2 border-white flex items-center justify-center">{cart.length}</span>}
+                    {/* WHATSAPP CON LOGO */}
+                    <button onClick={() => window.open(`https://wa.me/${settings.whatsapp}`)} className="fixed bottom-8 right-8 bg-[#25D366] text-white p-4 rounded-full shadow-2xl z-50 flex items-center gap-2 hover:scale-110 transition-transform">
+                        <i data-lucide="message-circle" fill="white"></i>
+                        <span className="font-bold text-xs pr-2 hidden md:inline uppercase">Contactar al Doctor de la informatica</span>
                     </button>
                 </div>
             );
