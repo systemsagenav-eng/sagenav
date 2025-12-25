@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Command Center - System.Sagenav</title>
+    <title>Admin Expert - System.Sagenav</title>
+    <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -19,6 +20,7 @@
         .font-tech { font-family: 'Orbitron', sans-serif; }
         .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #e2e8f0; }
         .tab-active { border-bottom: 4px solid #3b82f6; color: #3b82f6; font-weight: 900; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -36,26 +38,28 @@
             const [adminTab, setAdminTab] = useState('billing');
             const [loading, setLoading] = useState(true);
 
+            // DATOS
             const [settings, setSettings] = useState({
                 heroTitle: "SYSTEM.SAGENAV", commercialDesc: "", footerText: "",
                 whatsapp: "", categories: ["Servicios", "Productos"],
-                personalName: "", personalId: "", personalAddress: "", personalEmail: "", personalRut: "",
-                bgImages: [], personalLogo: null
+                personalName: "", personalId: "", personalAddress: "", personalRut: "", bgImages: [], personalLogo: null
             });
             const [inventory, setInventory] = useState([]);
             const [sales, setSales] = useState([]);
 
+            // FORMULARIOS
             const [newItem, setNewItem] = useState({ name: "", price: "", category: "Servicios", onDemand: false, img: "" });
             const [billClient, setBillClient] = useState({ name: "", nit: "", date: new Date().toISOString().split('T')[0] });
             const [billItems, setBillItems] = useState([]);
             const [manualItem, setManualItem] = useState({ desc: "", price: "" });
             const [reportFilter, setReportFilter] = useState({ day: "", month: "", year: new Date().getFullYear().toString() });
+            const [newCat, setNewCat] = useState("");
             
             const chartRef = useRef(null);
             const myChart = useRef(null);
 
             useEffect(() => {
-                const pass = prompt("Clave Doctor:");
+                const pass = prompt("Clave del Doctor:");
                 if (pass === "1234") { setAuthorized(true); fetchData(); }
                 else { window.location.href = "index.html"; }
             }, []);
@@ -64,7 +68,8 @@
                 try {
                     const { data } = await supabaseClient.from('sagenav_data').select('*');
                     if (data) {
-                        setSettings(prev => ({ ...prev, ...(data.find(d => d.key === 'settings')?.value || {}) }));
+                        const s = data.find(d => d.key === 'settings')?.value || {};
+                        setSettings(prev => ({ ...prev, ...s }));
                         setInventory(data.find(d => d.key === 'inventory')?.value || []);
                         setSales(data.find(d => d.key === 'sales')?.value || []);
                     }
@@ -72,6 +77,7 @@
                 setLoading(false);
             }
 
+            // COMPRESOR
             const compressImage = (file) => {
                 return new Promise((resolve) => {
                     const reader = new FileReader();
@@ -100,14 +106,14 @@
                 if (type === 'prod') setNewItem({...newItem, img: base64});
                 if (type === 'logo') setSettings({...settings, personalLogo: base64});
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                alert("Imagen cargada. Pulsa GUARDAR NUBE.");
+                alert("Imagen lista. Pulsa GUARDAR NUBE.");
             };
 
             const saveEverything = async () => {
                 const { error: e1 } = await supabaseClient.from('sagenav_data').update({ value: settings }).eq('key', 'settings');
                 const { error: e2 } = await supabaseClient.from('sagenav_data').update({ value: inventory }).eq('key', 'inventory');
                 const { error: e3 } = await supabaseClient.from('sagenav_data').update({ value: sales }).eq('key', 'sales');
-                if (!e1 && !e2 && !e3) alert("✅ Nube Sincronizada");
+                if (!e1 && !e2 && !e3) alert("✅ Todo sincronizado en la nube.");
                 else alert("❌ Error");
             };
 
@@ -115,24 +121,35 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
-                doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SAGENAV", 45, 20);
+                doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SYSTEM.SAGENAV", 45, 20);
                 doc.setFontSize(8).setFont("helvetica", "normal").text(`NIT: ${settings.personalId} | DIR: ${settings.personalAddress}`, 45, 26);
+                if(settings.personalRut) doc.text(`RUT: ${settings.personalRut}`, 45, 31);
+
                 doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 50, { align: "center" });
-                
+                doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 65);
+                doc.text(`FECHA: ${billClient.date}`, 160, 65);
+
                 const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
                 if (manualItem.desc) tableBody.push([1, manualItem.desc.toUpperCase(), `$${parseInt(manualItem.price || 0).toLocaleString()}`, `$${parseInt(manualItem.price || 0).toLocaleString()}`]);
                 
-                doc.autoTable({ startY: 70, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody, headStyles: {fillColor: [15, 23, 42]} });
+                doc.autoTable({ startY: 75, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody, headStyles: {fillColor: [15, 23, 42]} });
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
-                doc.save(`Cta_${billClient.name}.pdf`);
+                
+                doc.save(`CTA_${billClient.name}.pdf`);
                 setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
             };
 
+            // GRÁFICAS Y REPORTES
             useEffect(() => {
                 if (authorized && adminTab === 'reports' && chartRef.current) {
                     if (myChart.current) myChart.current.destroy();
-                    const filtered = sales.filter(s => s.date.includes(reportFilter.year));
+                    const filtered = sales.filter(s => {
+                        const [y, m, d] = s.date.split('-');
+                        return (reportFilter.year === "" || y === reportFilter.year) &&
+                               (reportFilter.month === "" || m === reportFilter.month) &&
+                               (reportFilter.day === "" || d === reportFilter.day);
+                    });
                     myChart.current = new Chart(chartRef.current, {
                         type: 'bar',
                         data: {
@@ -144,28 +161,35 @@
                 if(authorized) setTimeout(() => lucide.createIcons(), 500);
             }, [adminTab, sales, authorized, reportFilter]);
 
-            if (!authorized || loading) return <div className="p-20 text-center font-tech animate-pulse uppercase">Cargando Doctor...</div>;
+            if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Cargando Doctor...</div>;
 
             return (
                 <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
-                    <header className="flex justify-between items-center mb-8 bg-slate-900 p-6 rounded-[2rem] shadow-xl text-white">
-                        <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
-                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-3 rounded-xl font-bold text-xs">GUARDAR NUBE</button>
+                    <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 bg-slate-900 p-8 rounded-[2rem] text-white shadow-xl">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-blue-600 p-4 rounded-3xl"><i data-lucide="shield-check"></i></div>
+                            <div>
+                                <h1 className="text-xl font-black font-tech italic uppercase tracking-tighter">System.Sagenav</h1>
+                                <p className="text-[8px] font-bold opacity-50 uppercase tracking-widest">Doctor de la informática</p>
+                            </div>
+                        </div>
+                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">Guardar en Nube</button>
                     </header>
 
-                    <nav className="flex gap-6 mb-8 border-b text-[10px] font-black uppercase tracking-widest">
+                    <nav className="flex gap-8 mb-10 border-b overflow-x-auto pb-4 no-scrollbar text-[10px] font-black uppercase tracking-widest">
                         {['billing', 'inventory', 'reports', 'config'].map(t => (
-                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-2':'pb-2'}>{t}</button>
+                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-4':'pb-4 opacity-40'}>{t}</button>
                         ))}
                     </nav>
 
+                    {/* VISTA: FACTURACIÓN */}
                     {adminTab === 'billing' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Generar PDF de Cobro</h3>
-                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
-                                <input placeholder="NIT" className="w-full p-3 border rounded-xl" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
-                                <select className="w-full p-3 border rounded-xl" onChange={e=>{
+                                <h3 className="font-bold text-blue-600 uppercase text-xs mb-2">Generar PDF de Cobro</h3>
+                                <input placeholder="Cliente" className="w-full p-4 border rounded-2xl bg-slate-50 text-sm" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
+                                <input placeholder="NIT" className="w-full p-4 border rounded-2xl bg-slate-50 text-sm" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
+                                <select className="w-full p-4 border rounded-2xl bg-blue-50 font-bold text-sm" onChange={e=>{
                                     const it = inventory.find(i=>i.id == e.target.value);
                                     if(it) setBillItems([...billItems, it]);
                                 }}>
@@ -173,56 +197,57 @@
                                     {inventory.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
                                 </select>
                                 <div className="flex gap-2">
-                                    <input placeholder="Ítem Manual" className="flex-grow p-3 border rounded-xl" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
-                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
+                                    <input placeholder="Ítem Manual" className="flex-grow p-4 border rounded-2xl bg-slate-50 text-sm" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
+                                    <input placeholder="$" type="number" className="w-24 p-4 border rounded-2xl bg-slate-50 text-sm" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
                                 </div>
-                                <button onClick={generatePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">DESCARGAR PDF</button>
+                                <button onClick={generatePDF} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2"><i data-lucide="file-text"></i> DESCARGAR PDF</button>
                             </div>
                             <div className="admin-card">
-                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Resumen actual</h3>
-                                {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs font-bold uppercase">{it.name} <b>${it.price.toLocaleString()}</b></div>))}
+                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Resumen</h3>
+                                {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-3 text-xs uppercase font-bold italic"><span>{it.name}</span><b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500">×</button></div>))}
                             </div>
                         </div>
                     )}
 
+                    {/* VISTA: REPORTES CON FILTROS */}
                     {adminTab === 'reports' && (
                         <div className="space-y-6 animate-in fade-in">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border">
-                                <input placeholder="Año (YYYY)" className="p-2 border rounded-lg text-xs" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
-                                <button onClick={()=>setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 text-[10px] font-bold uppercase rounded-lg">Limpiar Filtros</button>
+                                <input placeholder="Año" className="p-2 border rounded-lg text-xs" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
+                                <input placeholder="Mes" className="p-2 border rounded-lg text-xs" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} />
+                                <input placeholder="Día" className="p-2 border rounded-lg text-xs" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} />
+                                <button onClick={()=>setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 text-[10px] font-bold uppercase rounded-lg">Limpiar</button>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="admin-card md:col-span-2"><canvas ref={chartRef}></canvas></div>
                                 <div className="admin-card overflow-y-auto max-h-[400px]">
-                                    {sales.map(s => (<div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase">{s.date} - {s.concept} <b className="text-emerald-600">${s.amount.toLocaleString()}</b></div>))}
+                                    {sales.map(s => (<div key={s.id} className="border-b py-3 text-[10px] font-bold uppercase">{s.date} - {s.concept} <b className="text-emerald-600">${s.amount.toLocaleString()}</b></div>))}
                                 </div>
                             </div>
                         </div>
                     )}
 
+                    {/* VISTA: INVENTARIO */}
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                                 <input placeholder="Nombre" className="p-3 border rounded-xl" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
                                 <input placeholder="Precio" type="number" className="p-3 border rounded-xl" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
-                                <select className="p-3 border rounded-xl" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
+                                <select className="p-3 border rounded-xl font-bold" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
                                     {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
-                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase bg-slate-100 p-3 rounded-xl cursor-pointer">
+                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase bg-slate-100 p-3 rounded-xl">
                                     <input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} />
-                                    ¿Solo por Encargo?
+                                    ¿Encargo?
                                 </label>
                             </div>
-                            <div className="flex gap-4 items-center">
-                                <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
-                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs">AGREGAR ÍTEM</button>
-                            </div>
+                            <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px] mb-4" />
+                            <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs w-full">Agregar Ítem</button>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
                                 {inventory.map(i=>(
                                     <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group">
-                                        <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100 transition">×</button>
+                                        <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100">×</button>
                                         <p className="text-[8px] font-bold opacity-30 uppercase">{i.category}</p>
-                                        {i.onDemand && <p className="text-[7px] text-orange-600 font-black uppercase">Encargo</p>}
                                         <p className="font-bold text-[10px] uppercase truncate">{i.name}</p>
                                         <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
                                     </div>
@@ -231,26 +256,32 @@
                         </div>
                     )}
 
+                    {/* VISTA: AJUSTES (Aquí recuperamos Categorías y Pie de Página) */}
                     {adminTab === 'config' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Profesionales</h3>
-                                <input placeholder="Nombre / NIT / WhatsApp / Dirección" className="w-full p-3 border rounded-xl text-xs mb-2" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Perfil del Doctor</h3>
+                                <input placeholder="Nombre / NIT / Dirección / WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
                                 <textarea placeholder="Pie de Página (Footer)" className="w-full p-3 border rounded-xl h-24 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
-                                <div><label className="text-xs">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} /></div>
+                                <div><label className="text-[10px] font-bold uppercase opacity-40">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} /></div>
                             </div>
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs italic">Carrusel de Presentación</h3>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {settings.bgImages?.map((img, i) => (
-                                        <div key={i} className="relative group">
-                                            <img src={img} className="w-full h-16 object-cover rounded-lg border" />
-                                            <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-4 h-4 text-[8px]">×</button>
-                                        </div>
-                                    ))}
+                                <h3 className="font-bold text-blue-600 uppercase text-xs italic">Gestión de Categorías</h3>
+                                <div className="flex gap-2">
+                                    <input placeholder="Nueva Categoría" className="flex-grow p-2 border rounded-xl text-xs" value={newCat} onChange={e=>setNewCat(e.target.value)} />
+                                    <button onClick={()=>{if(newCat) setSettings({...settings, categories:[...(settings.categories||[]), newCat]}); setNewCat("")}} className="bg-blue-600 text-white px-4 rounded-xl font-bold">+</button>
                                 </div>
-                                <input type="file" onChange={e=>handleFile(e, 'bg')} />
-                                <button onClick={()=>setSettings({...settings, bgImages:[]})} className="w-full border-2 border-red-100 text-red-500 py-2 rounded-xl text-[10px] font-bold">VACIAR CARRUSEL</button>
+                                <div className="flex flex-wrap gap-2">
+                                    {settings.categories?.map(c => <span key={c} className="bg-slate-100 px-3 py-1 rounded-full text-[10px] font-bold">{c} <button onClick={()=>setSettings({...settings, categories: settings.categories.filter(ca=>ca!==c)})} className="text-red-500 font-black ml-1">×</button></span>)}
+                                </div>
+                                <div className="pt-4 border-t">
+                                    <h3 className="font-bold text-blue-600 uppercase text-xs italic mb-2">Carrusel</h3>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {settings.bgImages?.map((img, i) => (<img key={i} src={img} className="w-full h-10 object-cover rounded" />))}
+                                    </div>
+                                    <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-[10px] mt-2" />
+                                    <button onClick={()=>setSettings({...settings, bgImages:[]})} className="text-red-500 text-[10px] font-bold uppercase mt-2">Vaciar Carrusel</button>
+                                </div>
                             </div>
                         </div>
                     )}
