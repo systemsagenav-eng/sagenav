@@ -59,18 +59,11 @@
                 }
             }, [settings]);
 
-            // Forzar carga de iconos cuando cambia el carrito o se abre el modal
-            useEffect(() => {
-                lucide.createIcons();
-            }, [cart, showCartModal, activeTab, settings]);
+            useEffect(() => { lucide.createIcons(); }, [cart, showCartModal, activeTab, settings]);
 
-            // --- LÓGICA DEL CARRITO ---
-            const addToCart = (item) => {
-                setCart([...cart, item]);
-            };
-
+            // Carrito
+            const addToCart = (item) => setCart([...cart, item]);
             const removeFromCart = (itemId) => {
-                // Encontrar el índice del primer ítem con ese ID para borrar solo uno
                 const index = cart.findIndex(i => i.id === itemId);
                 if (index > -1) {
                     const newCart = [...cart];
@@ -79,26 +72,16 @@
                     if (newCart.length === 0) setShowCartModal(false);
                 }
             };
-
-            // Agrupar productos iguales para mostrar en el modal
             const getGroupedCart = () => {
                 const grouped = {};
-                cart.forEach(item => {
-                    if (grouped[item.id]) {
-                        grouped[item.id].qty += 1;
-                    } else {
-                        grouped[item.id] = { ...item, qty: 1 };
-                    }
-                });
+                cart.forEach(item => { if (grouped[item.id]) grouped[item.id].qty += 1; else grouped[item.id] = { ...item, qty: 1 }; });
                 return Object.values(grouped);
             };
-
             const cartTotal = cart.reduce((total, item) => total + (item.price || 0), 0);
 
             const handleWhatsApp = () => {
                 const grouped = getGroupedCart();
                 const itemsList = grouped.map(i => `- (${i.qty}) ${i.name} $${(i.price * i.qty).toLocaleString()}`).join('%0A');
-                
                 const text = cart.length > 0 
                     ? `Hola Ingeniero / Doctor de la Informática, deseo encargar:%0A%0A${itemsList}%0A%0A*Total: $${cartTotal.toLocaleString()}*` 
                     : "Hola Ingeniero, necesito información sobre sus servicios.";
@@ -113,9 +96,13 @@
                 <div className="min-h-screen flex flex-col pb-24">
                     
                     <nav className="glass sticky top-0 z-40 p-4 flex justify-between items-center px-6 md:px-20">
-                        <div className="flex flex-col cursor-pointer" onClick={()=>window.scrollTo(0,0)}>
-                            <span className="font-tech font-black text-blue-600 text-xl italic uppercase tracking-tighter">System.Sagenav</span>
-                            <span className="text-[8px] font-bold uppercase opacity-60 tracking-widest">Doctor de la informática</span>
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={()=>window.scrollTo(0,0)}>
+                            {/* LOGO WEB AQUÍ */}
+                            {settings.navLogo && <img src={settings.navLogo} className="w-10 h-10 rounded-full object-cover border-2 border-blue-600" />}
+                            <div className="flex flex-col">
+                                <span className="font-tech font-black text-blue-600 text-xl italic uppercase tracking-tighter">System.Sagenav</span>
+                                <span className="text-[8px] font-bold uppercase opacity-60 tracking-widest">Doctor de la informática</span>
+                            </div>
                         </div>
                         <div className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest">
                             <button onClick={() => setActiveTab('Todos')} className={`pb-1 transition-colors ${activeTab === 'Todos' ? 'text-blue-600 border-b-2 border-blue-600' : 'hover:text-blue-400'}`}>Inicio</button>
@@ -147,10 +134,6 @@
                     </div>
 
                     <main className="max-w-7xl mx-auto p-6 md:p-20 flex-grow w-full">
-                        <div className="flex items-center gap-4 mb-8">
-                            <h3 className="text-2xl font-black uppercase italic border-l-4 border-blue-600 pl-4">{activeTab}</h3>
-                        </div>
-
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                             {filteredItems.map(item => (
                                 <div key={item.id} className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-300">
@@ -175,33 +158,43 @@
                         </div>
                     </main>
 
+                    {/* FOOTER CON REDES SOCIALES */}
                     <footer className="bg-slate-900 text-slate-400 p-10 md:p-20 border-t border-slate-800">
                         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12">
                             <div className="space-y-4">
                                 <span className="font-tech font-black text-white text-2xl italic uppercase tracking-tighter">System.Sagenav</span>
                                 <p className="text-xs italic leading-relaxed max-w-sm text-slate-300">{settings.footerText}</p>
+                                
+                                {/* ICONOS DE REDES SOCIALES */}
+                                <div className="flex gap-4 pt-4">
+                                    {settings.socialInsta && <a href={settings.socialInsta} target="_blank" className="bg-slate-800 p-2 rounded-full hover:bg-pink-600 hover:text-white transition"><i data-lucide="instagram" size={16}></i></a>}
+                                    {settings.socialFb && <a href={settings.socialFb} target="_blank" className="bg-slate-800 p-2 rounded-full hover:bg-blue-600 hover:text-white transition"><i data-lucide="facebook" size={16}></i></a>}
+                                    {settings.socialTiktok && <a href={settings.socialTiktok} target="_blank" className="bg-slate-800 p-2 rounded-full hover:bg-black hover:text-white transition border border-slate-700"><i data-lucide="video" size={16}></i></a>}
+                                </div>
                             </div>
                             <div className="text-[10px] font-bold uppercase tracking-widest space-y-4">
                                 <p className="text-white mb-4 border-l-2 border-blue-600 pl-3 italic">Contacto</p>
-                                <p>{settings.personalAddress}</p>
-                                <p>+{settings.whatsapp}</p>
-                                <p>NIT: {settings.personalId}</p>
+                                <p className="flex items-center gap-2"><i data-lucide="mail" size={14}></i> {settings.publicEmail}</p>
+                                <p className="flex items-center gap-2"><i data-lucide="map-pin" size={14}></i> {settings.personalAddress}</p>
+                                <p className="flex items-center gap-2"><i data-lucide="phone" size={14}></i> +{settings.whatsapp}</p>
                             </div>
                         </div>
                     </footer>
 
+                    {/* BARRA CARRITO INFERIOR */}
                     {cart.length > 0 && (
                         <div className="fixed bottom-0 left-0 w-full bg-slate-900 text-white p-4 shadow-xl z-50 slide-up flex justify-between items-center px-6 md:px-20 border-t border-slate-700">
                             <div className="flex flex-col">
-                                <span className="text-[10px] font-bold uppercase opacity-60 tracking-widest">Total Estimado</span>
+                                <span className="text-[10px] font-bold uppercase opacity-60 tracking-widest">Total</span>
                                 <span className="text-xl font-black font-tech">${cartTotal.toLocaleString()}</span>
                             </div>
-                            <button onClick={() => setShowCartModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95">
+                            <button onClick={() => setShowCartModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg flex items-center gap-2">
                                 Ver Carrito <span className="bg-white text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-black">{cart.length}</span>
                             </button>
                         </div>
                     )}
 
+                    {/* MODAL CARRITO */}
                     {showCartModal && (
                         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[60] flex items-end md:items-center justify-center p-0 md:p-4 fade-in">
                             <div className="bg-white w-full max-w-md md:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -220,13 +213,9 @@
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
-                                                <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center bg-white rounded-md shadow-sm text-red-500 hover:text-red-700 font-bold active:scale-90">
-                                                    <i data-lucide="minus" size={14}></i>
-                                                </button>
+                                                <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center bg-white rounded-md shadow-sm text-red-500 hover:text-red-700 font-bold active:scale-90"><i data-lucide="minus" size={14}></i></button>
                                                 <span className="font-black text-xs w-6 text-center">{item.qty}</span>
-                                                <button onClick={() => addToCart(item)} className="w-8 h-8 flex items-center justify-center bg-blue-600 rounded-md shadow-sm text-white hover:bg-blue-700 font-bold active:scale-90">
-                                                    <i data-lucide="plus" size={14}></i>
-                                                </button>
+                                                <button onClick={() => addToCart(item)} className="w-8 h-8 flex items-center justify-center bg-blue-600 rounded-md shadow-sm text-white hover:bg-blue-700 font-bold active:scale-90"><i data-lucide="plus" size={14}></i></button>
                                             </div>
                                         </div>
                                     ))}
