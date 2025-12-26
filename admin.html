@@ -20,6 +20,7 @@
         .font-tech { font-family: 'Orbitron', sans-serif; }
         .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
         .tab-active { border-bottom: 4px solid #2563eb; color: #2563eb; font-weight: 900; }
+        .login-screen { background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -29,15 +30,16 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- TUS LLAVES (PÉGALAS AQUÍ) ---
+        // --- TUS LLAVES (REEMPLAZAR AQUÍ) ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
 
         function AdminApp() {
             const [authorized, setAuthorized] = useState(false);
+            const [passInput, setPassInput] = useState("");
             const [adminTab, setAdminTab] = useState('billing');
-            const [loading, setLoading] = useState(true);
+            const [loading, setLoading] = useState(false);
 
             // DATOS
             const [settings, setSettings] = useState({
@@ -62,16 +64,20 @@
             const chartRef = useRef(null);
             const myChart = useRef(null);
 
-            useEffect(() => {
-                const pass = prompt("Clave Doctor:");
-                if (pass === "1234") { setAuthorized(true); fetchData(); }
-                else { window.location.href = "index.html"; }
-            }, []);
+            // FUNCIÓN DE LOGIN (REEMPLAZA AL PROMPT)
+            const handleLogin = () => {
+                if (passInput === "1234") {
+                    setAuthorized(true);
+                    setLoading(true);
+                    fetchData();
+                } else {
+                    alert("Clave Incorrecta. Intenta de nuevo.");
+                }
+            };
 
             async function fetchData() {
                 try {
-                    const { data, error } = await supabaseClient.from('sagenav_data').select('*');
-                    if (error) { alert("Error conectando a BD: " + error.message); }
+                    const { data } = await supabaseClient.from('sagenav_data').select('*');
                     if (data) {
                         setSettings(prev => ({ ...prev, ...(data.find(d => d.key === 'settings')?.value || {}) }));
                         setInventory(data.find(d => d.key === 'inventory')?.value || []);
@@ -111,88 +117,107 @@
                 if (type === 'logo') setSettings({...settings, personalLogo: base64});
                 if (type === 'navLogo') setSettings({...settings, navLogo: base64});
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                alert("Imagen cargada (Recuerda Guardar Nube)");
+                alert("Imagen cargada (Dale a Guardar Nube)");
             };
 
             const saveEverything = async () => {
-                // Guardamos todo en bloque
                 const updates = [
                     { key: 'settings', value: settings },
                     { key: 'inventory', value: inventory },
                     { key: 'sales', value: sales },
                     { key: 'expenses', value: expenses }
                 ];
-                
                 let err = false;
                 for (let up of updates) {
                     const { error } = await supabaseClient.from('sagenav_data').upsert({ key: up.key, value: up.value });
                     if(error) err = true;
                 }
-                if (!err) alert("✅ GUARDADO EXITOSO EN LA NUBE");
-                else alert("❌ Error al guardar. Revisa tu conexión.");
+                if (!err) alert("✅ NUBE SINCRONIZADA"); else alert("❌ Error de conexión");
             };
 
             const generateInvoicePDF = () => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
-                
                 doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SAGENAV", 45, 20);
                 doc.setFontSize(8).setFont("helvetica", "normal").text(`NIT/CC: ${settings.personalId || ''} | ${settings.personalAddress || ''}`, 45, 26);
                 doc.text(`Email: ${settings.publicEmail || ''} | Tel: ${settings.whatsapp || ''}`, 45, 31);
-
                 doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 50, { align: "center" });
                 doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 65);
                 doc.text(`NIT/CC: ${billClient.nit}`, 15, 70);
                 doc.text(`FECHA: ${billClient.date}`, 160, 65);
-
                 const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
                 if (manualItem.desc) tableBody.push([1, manualItem.desc.toUpperCase(), `$${parseInt(manualItem.price || 0).toLocaleString()}`, `$${parseInt(manualItem.price || 0).toLocaleString()}`]);
-                
                 doc.autoTable({ startY: 80, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody });
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
                 doc.save(`CTA_${billClient.name}.pdf`);
-                
                 setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
-                alert("✅ PDF Generado y Venta Registrada");
             };
 
-            // Gráfica de Balance (Ingresos vs Gastos)
+            const generateReportPDF = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const filtered = sales.filter(s => s.date.includes(reportFilter.year));
+                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE VENTAS", 105, 20, { align: "center" });
+                const tableBody = filtered.map(s => [s.date, s.concept.toUpperCase(), `$${s.amount.toLocaleString()}`]);
+                doc.autoTable({ startY: 40, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: tableBody });
+                const total = filtered.reduce((acc, s) => acc + s.amount, 0);
+                doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
+                doc.save(`Reporte_Ventas.pdf`);
+            };
+
             useEffect(() => {
                 if (authorized && (adminTab === 'reports' || adminTab === 'accounting') && chartRef.current) {
                     if (myChart.current) myChart.current.destroy();
-                    
                     const filteredSales = sales.filter(s => s.date.includes(reportFilter.year));
                     const filteredExp = expenses.filter(e => e.date.includes(reportFilter.year));
-
                     const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
                     const incData = new Array(12).fill(0);
                     const expData = new Array(12).fill(0);
-
                     filteredSales.forEach(s => { const m = parseInt(s.date.split('-')[1])-1; if(m>=0) incData[m]+=s.amount; });
                     filteredExp.forEach(e => { const m = parseInt(e.date.split('-')[1])-1; if(m>=0) expData[m]+=e.amount; });
-
                     myChart.current = new Chart(chartRef.current, {
                         type: 'bar',
                         data: {
                             labels: months,
-                            datasets: [
-                                { label: 'Ingresos', data: incData, backgroundColor: '#10b981' },
-                                { label: 'Gastos', data: expData, backgroundColor: '#ef4444' }
-                            ]
+                            datasets: [{ label: 'Ingresos', data: incData, backgroundColor: '#10b981' }, { label: 'Gastos', data: expData, backgroundColor: '#ef4444' }]
                         }
                     });
                 }
                 if(authorized) setTimeout(() => lucide.createIcons(), 500);
             }, [adminTab, sales, expenses, authorized, reportFilter]);
 
-            // Cálculos Totales
+            // --- PANTALLA DE BLOQUEO ---
+            if (!authorized) {
+                return (
+                    <div className="h-screen w-full flex flex-col items-center justify-center login-screen text-white p-4">
+                        <div className="bg-white/10 backdrop-blur-lg p-10 rounded-3xl border border-white/20 shadow-2xl text-center max-w-sm w-full animate-in zoom-in">
+                            <i data-lucide="shield-lock" className="w-16 h-16 mx-auto mb-4 text-blue-400"></i>
+                            <h1 className="text-2xl font-black font-tech mb-2">SYSTEM.SAGENAV</h1>
+                            <p className="text-xs uppercase tracking-widest opacity-60 mb-6">Acceso Restringido</p>
+                            <input 
+                                type="password" 
+                                placeholder="Clave de Acceso" 
+                                className="w-full p-4 rounded-xl text-center bg-black/50 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-blue-500 mb-4 font-tech tracking-widest text-lg"
+                                value={passInput}
+                                onChange={e => setPassInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                            />
+                            <button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg shadow-blue-900/50">
+                                Desbloquear
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-tech uppercase animate-pulse">Conectando...</div>;
+
+            // --- APLICACIÓN PRINCIPAL ---
             const totalIncome = sales.reduce((sum, item) => sum + (item.amount || 0), 0);
             const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
             const netProfit = totalIncome - totalExpenses;
-
-            if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Conectando Sistema...</div>;
 
             return (
                 <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
@@ -201,10 +226,10 @@
                             {settings.navLogo && <img src={settings.navLogo} className="w-12 h-12 rounded-full border-2 border-blue-500"/>}
                             <div>
                                 <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
-                                <p className="text-[9px] uppercase tracking-widest opacity-60">Command Center v2.0</p>
+                                <p className="text-[9px] uppercase tracking-widest opacity-60">Command Center</p>
                             </div>
                         </div>
-                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
+                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2 mt-4 md:mt-0"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
                     </header>
 
                     <nav className="flex flex-wrap gap-4 mb-8 border-b pb-4">
@@ -215,7 +240,6 @@
                         ))}
                     </nav>
 
-                    {/* 1. FACTURACIÓN */}
                     {adminTab === 'billing' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
@@ -234,9 +258,8 @@
                                 <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF</button>
                             </div>
                             <div className="admin-card flex flex-col h-full min-h-[300px]">
-                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle de Items</h3>
+                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle</h3>
                                 <div className="flex-grow space-y-2 overflow-y-auto max-h-[300px]">
-                                    {billItems.length === 0 && !manualItem.desc && <p className="text-center text-xs opacity-30 mt-10">Agrega productos para ver el resumen aquí.</p>}
                                     {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 px-2 rounded">x</button></div>))}
                                     {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
                                 </div>
@@ -248,7 +271,6 @@
                         </div>
                     )}
 
-                    {/* 2. INVENTARIO */}
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
                              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -266,7 +288,6 @@
                                 <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", cost:"", img:""})}} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs ml-auto">AGREGAR ÍTEM</button>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
-                                {inventory.length === 0 && <p className="col-span-full text-center text-sm opacity-40 py-10">No hay productos en inventario. ¡Agrega el primero arriba!</p>}
                                 {inventory.map(i=>(
                                     <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group hover:shadow-md">
                                         <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-white bg-red-500 rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-lg z-10">×</button>
@@ -280,7 +301,6 @@
                         </div>
                     )}
 
-                    {/* 3. CONTABILIDAD */}
                     {adminTab === 'accounting' && (
                         <div className="space-y-8 animate-in fade-in">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -309,7 +329,6 @@
                                 </div>
                                 <div className="admin-card overflow-y-auto max-h-[300px]">
                                     <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Últimos Gastos</h3>
-                                    {expenses.length === 0 && <p className="text-xs opacity-30">No hay gastos registrados.</p>}
                                     {expenses.map(e => (
                                         <div key={e.id} className="flex justify-between items-center border-b py-2 hover:bg-slate-50 px-2">
                                             <div><p className="text-[10px] font-bold text-slate-400">{e.date}</p><p className="text-xs font-bold uppercase">{e.concept}</p></div>
@@ -322,18 +341,17 @@
                         </div>
                     )}
 
-                    {/* 4. REPORTES */}
                     {adminTab === 'reports' && (
                         <div className="space-y-6 animate-in fade-in">
                             <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap">
                                 <span className="text-[10px] font-bold uppercase opacity-40">Filtro Año:</span>
                                 <input placeholder="2025" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
+                                <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR REPORTE PDF</button>
                             </div>
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 <div className="admin-card lg:col-span-2 h-[350px]"><canvas ref={chartRef}></canvas></div>
                                 <div className="admin-card overflow-y-auto max-h-[400px]">
-                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle Ventas</h3>
-                                    {sales.length === 0 && <p className="text-xs opacity-30">No hay ventas registradas.</p>}
+                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Ventas</h3>
                                     {sales.filter(s => s.date.includes(reportFilter.year)).map(s => (
                                         <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between hover:bg-slate-50 px-1">
                                             <span>{s.date} - {s.concept}</span>
@@ -345,21 +363,25 @@
                         </div>
                     )}
 
-                    {/* 5. AJUSTES */}
                     {adminTab === 'config' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados (PDF)</h3>
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados</h3>
                                 <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
                                 <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
                                 <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
                                 <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div>
                             </div>
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos (Web)</h3>
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos</h3>
                                 <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
                                 <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
                                 <textarea placeholder="Footer Text" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
+                                <div className="grid grid-cols-3 gap-2 border-t pt-2">
+                                    <input placeholder="FB Link" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
+                                    <input placeholder="IG Link" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
+                                    <input placeholder="TK Link" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
+                                </div>
                                 <div className="pt-2 border-t">
                                     <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel (Clic X para borrar):</label>
                                     <div className="flex gap-2 mb-2 overflow-x-auto pb-2 min-h-[50px]">
@@ -371,6 +393,7 @@
                                         ))}
                                     </div>
                                     <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" />
+                                    <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
                                 </div>
                             </div>
                         </div>
