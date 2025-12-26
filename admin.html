@@ -16,10 +16,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
         .font-tech { font-family: 'Orbitron', sans-serif; }
-        .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-        .tab-active { border-bottom: 4px solid #3b82f6; color: #3b82f6; font-weight: 900; }
+        .admin-card { background: white; border-radius: 1.5rem; padding: 1.5rem; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        .tab-active { border-bottom: 4px solid #2563eb; color: #2563eb; font-weight: 900; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -39,7 +39,7 @@
             const [adminTab, setAdminTab] = useState('billing');
             const [loading, setLoading] = useState(true);
 
-            // DATOS
+            // DATOS GENERALES
             const [settings, setSettings] = useState({
                 heroTitle: "SYSTEM.SAGENAV", commercialDesc: "", footerText: "",
                 whatsapp: "", categories: ["Servicios", "Productos"],
@@ -47,14 +47,16 @@
                 socialInsta: "", socialFb: "", socialTiktok: "",
                 bgImages: [], personalLogo: null, navLogo: null
             });
-            const [inventory, setInventory] = useState([]);
+            const [inventory, setInventory] = useState([]); // Ahora incluye 'cost'
             const [sales, setSales] = useState([]);
+            const [expenses, setExpenses] = useState([]); // NUEVO: Gastos
 
             // FORMULARIOS
-            const [newItem, setNewItem] = useState({ name: "", price: "", category: "Servicios", onDemand: false, img: "" });
+            const [newItem, setNewItem] = useState({ name: "", price: "", cost: "", category: "Servicios", onDemand: false, img: "" });
             const [billClient, setBillClient] = useState({ name: "", nit: "", date: new Date().toISOString().split('T')[0] });
             const [billItems, setBillItems] = useState([]);
             const [manualItem, setManualItem] = useState({ desc: "", price: "" });
+            const [newExpense, setNewExpense] = useState({ concept: "", amount: "", date: new Date().toISOString().split('T')[0] });
             const [reportFilter, setReportFilter] = useState({ day: "", month: "", year: new Date().getFullYear().toString() });
             const [newCat, setNewCat] = useState("");
             
@@ -63,7 +65,7 @@
 
             useEffect(() => {
                 const pass = prompt("Clave Doctor:");
-                if (pass === "0207") { setAuthorized(true); fetchData(); }
+                if (pass === "1234") { setAuthorized(true); fetchData(); }
                 else { window.location.href = "index.html"; }
             }, []);
 
@@ -74,6 +76,7 @@
                         setSettings(prev => ({ ...prev, ...(data.find(d => d.key === 'settings')?.value || {}) }));
                         setInventory(data.find(d => d.key === 'inventory')?.value || []);
                         setSales(data.find(d => d.key === 'sales')?.value || []);
+                        setExpenses(data.find(d => d.key === 'expenses')?.value || []);
                     }
                 } catch(e) { console.error(e); }
                 setLoading(false);
@@ -108,14 +111,25 @@
                 if (type === 'logo') setSettings({...settings, personalLogo: base64});
                 if (type === 'navLogo') setSettings({...settings, navLogo: base64});
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                alert("Imagen lista. Pulsa GUARDAR NUBE.");
+                alert("Imagen lista.");
             };
 
             const saveEverything = async () => {
-                const { error: e1 } = await supabaseClient.from('sagenav_data').update({ value: settings }).eq('key', 'settings');
-                const { error: e2 } = await supabaseClient.from('sagenav_data').update({ value: inventory }).eq('key', 'inventory');
-                const { error: e3 } = await supabaseClient.from('sagenav_data').update({ value: sales }).eq('key', 'sales');
-                if (!e1 && !e2 && !e3) alert("✅ Guardado Exitoso"); else alert("❌ Error");
+                const updates = [
+                    { key: 'settings', value: settings },
+                    { key: 'inventory', value: inventory },
+                    { key: 'sales', value: sales },
+                    { key: 'expenses', value: expenses }
+                ];
+
+                let errorOccurred = false;
+                for (let up of updates) {
+                    const { error } = await supabaseClient.from('sagenav_data').update({ value: up.value }).eq('key', up.key);
+                    if (error) errorOccurred = true;
+                }
+
+                if (!errorOccurred) alert("✅ Nube Sincronizada (Contabilidad incluida)"); 
+                else alert("❌ Error. Verifica que hayas creado la fila 'expenses' en Supabase.");
             };
 
             const generateInvoicePDF = () => {
@@ -140,39 +154,82 @@
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
                 doc.save(`CTA_${billClient.name}.pdf`);
+                
                 setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
             };
 
             const generateReportPDF = () => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
-                const filtered = sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day));
+                const filteredSales = sales.filter(s => s.date.includes(reportFilter.year));
+                const filteredExpenses = expenses.filter(e => e.date.includes(reportFilter.year));
                 
-                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE DE VENTAS", 105, 20, { align: "center" });
-                doc.setFontSize(10).setFont("helvetica", "normal").text(`Periodo: ${reportFilter.year}-${reportFilter.month || 'Todos'}-${reportFilter.day || 'Todos'}`, 15, 30);
+                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE FINANCIERO", 105, 20, { align: "center" });
+                doc.setFontSize(10).setFont("helvetica", "normal").text(`Año: ${reportFilter.year}`, 15, 30);
                 
-                const tableBody = filtered.map(s => [s.date, s.concept.toUpperCase(), `$${s.amount.toLocaleString()}`]);
-                doc.autoTable({ startY: 40, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: tableBody });
+                let yPos = 40;
+                doc.text("INGRESOS (VENTAS)", 15, yPos);
+                const salesBody = filteredSales.map(s => [s.date, s.concept, `$${s.amount.toLocaleString()}`]);
+                doc.autoTable({ startY: yPos + 5, head: [['FECHA', 'CLIENTE', 'VALOR']], body: salesBody });
                 
-                const total = filtered.reduce((acc, s) => acc + s.amount, 0);
-                doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
-                doc.save(`Reporte_Ventas.pdf`);
+                yPos = doc.lastAutoTable.finalY + 15;
+                doc.text("EGRESOS (GASTOS)", 15, yPos);
+                const expBody = filteredExpenses.map(e => [e.date, e.concept, `$${e.amount.toLocaleString()}`]);
+                doc.autoTable({ startY: yPos + 5, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: expBody });
+                
+                const totalS = filteredSales.reduce((a,b)=>a+b.amount,0);
+                const totalE = filteredExpenses.reduce((a,b)=>a+b.amount,0);
+                
+                yPos = doc.lastAutoTable.finalY + 15;
+                doc.setFontSize(12).setFont("helvetica", "bold");
+                doc.text(`TOTAL INGRESOS: $${totalS.toLocaleString()}`, 15, yPos);
+                doc.text(`TOTAL GASTOS: $${totalE.toLocaleString()}`, 15, yPos + 7);
+                doc.text(`UTILIDAD NETA: $${(totalS - totalE).toLocaleString()}`, 15, yPos + 14);
+                
+                doc.save(`Balance_${reportFilter.year}.pdf`);
             };
 
+            // GRÁFICAS UNIFICADAS
             useEffect(() => {
                 if (authorized && adminTab === 'reports' && chartRef.current) {
                     if (myChart.current) myChart.current.destroy();
-                    const filtered = sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day));
+                    
+                    // Calcular totales por mes del año seleccionado
+                    const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+                    const incomeData = new Array(12).fill(0);
+                    const expenseData = new Array(12).fill(0);
+
+                    sales.forEach(s => {
+                        if(s.date.startsWith(reportFilter.year)) {
+                            const m = parseInt(s.date.split('-')[1]) - 1;
+                            incomeData[m] += s.amount;
+                        }
+                    });
+                    expenses.forEach(e => {
+                        if(e.date.startsWith(reportFilter.year)) {
+                            const m = parseInt(e.date.split('-')[1]) - 1;
+                            expenseData[m] += e.amount;
+                        }
+                    });
+
                     myChart.current = new Chart(chartRef.current, {
                         type: 'bar',
                         data: {
-                            labels: filtered.slice(0, 15).map(s => s.date),
-                            datasets: [{ label: 'Ventas', data: filtered.slice(0, 15).map(s => s.amount), backgroundColor: '#3b82f6' }]
+                            labels: months,
+                            datasets: [
+                                { label: 'Ingresos', data: incomeData, backgroundColor: '#10b981' },
+                                { label: 'Gastos', data: expenseData, backgroundColor: '#ef4444' }
+                            ]
                         }
                     });
                 }
                 if(authorized) setTimeout(() => lucide.createIcons(), 500);
-            }, [adminTab, sales, authorized, reportFilter]);
+            }, [adminTab, sales, expenses, authorized, reportFilter]);
+
+            // CALCULOS CONTABLES
+            const totalIncome = sales.reduce((sum, item) => sum + (item.amount || 0), 0);
+            const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
+            const netProfit = totalIncome - totalExpenses;
 
             if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Cargando Sistema...</div>;
 
@@ -189,43 +246,37 @@
                         <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
                     </header>
 
-                    <nav className="flex gap-8 mb-8 border-b overflow-x-auto pb-4 no-scrollbar text-[10px] font-black uppercase tracking-widest">
-                        {['billing', 'inventory', 'reports', 'config'].map(t => (
-                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-4':'pb-4 opacity-50'}>{t}</button>
+                    <nav className="flex gap-4 mb-8 border-b overflow-x-auto pb-4 no-scrollbar text-[10px] font-black uppercase tracking-widest">
+                        {['billing', 'inventory', 'accounting', 'reports', 'config'].map(t => (
+                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-4 px-2':'pb-4 px-2 opacity-50'}>
+                                {t === 'billing' ? 'Facturación' : t === 'inventory' ? 'Inventario' : t === 'accounting' ? 'Contabilidad' : t === 'reports' ? 'Reportes' : 'Ajustes'}
+                            </button>
                         ))}
                     </nav>
 
-                    {/* VISTA: FACTURACIÓN */}
+                    {/* 1. FACTURACIÓN */}
                     {adminTab === 'billing' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Generar Cuenta de Cobro</h3>
-                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl bg-slate-50" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
-                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl bg-slate-50" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
-                                <input type="date" className="w-full p-3 border rounded-xl bg-slate-50 font-bold text-sm" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
-                                <select className="w-full p-3 border rounded-xl bg-slate-50 text-sm" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Nueva Cuenta de Cobro</h3>
+                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl bg-slate-50 text-xs" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
+                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl bg-slate-50 text-xs" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
+                                <input type="date" className="w-full p-3 border rounded-xl bg-slate-50 font-bold text-xs" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
+                                <select className="w-full p-3 border rounded-xl bg-slate-50 text-xs" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
                                     <option value="">Añadir ítem...</option>
                                     {inventory.map(i=><option key={i.id} value={i.id}>{i.name} - ${i.price}</option>)}
                                 </select>
                                 <div className="flex gap-2">
-                                    <input placeholder="Manual..." className="flex-grow p-3 border rounded-xl bg-slate-50 text-sm" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
-                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl bg-slate-50 text-sm" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
+                                    <input placeholder="Manual..." className="flex-grow p-3 border rounded-xl bg-slate-50 text-xs" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
+                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl bg-slate-50 text-xs" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
                                 </div>
                                 <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF</button>
                             </div>
                             <div className="admin-card flex flex-col h-full">
-                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Resumen</h3>
+                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle Factura</h3>
                                 <div className="flex-grow space-y-2 overflow-y-auto max-h-[300px]">
-                                    {billItems.map((it, idx)=>(
-                                        <div key={idx} className="flex justify-between border-b py-2 text-xs uppercase italic font-bold">
-                                            <span>{it.name}</span>
-                                            <div className="flex gap-2 items-center">
-                                                <span>${it.price.toLocaleString()}</span>
-                                                <button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 rounded p-1"><i data-lucide="x" size={12}></i></button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase italic font-bold text-blue-600"><span>{manualItem.desc}</span> <span>${parseInt(manualItem.price||0).toLocaleString()}</span></div>}
+                                    {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase italic font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500">×</button></div>))}
+                                    {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase italic font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
                                 </div>
                                 <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase">
                                     <span>Total:</span>
@@ -235,96 +286,164 @@
                         </div>
                     )}
 
-                    {/* VISTA: REPORTES */}
-                    {adminTab === 'reports' && (
-                        <div className="space-y-6 animate-in fade-in">
-                            <div className="flex flex-wrap gap-4 bg-white p-4 rounded-2xl border items-center">
-                                <span className="text-[10px] font-bold uppercase opacity-40">Filtros:</span>
-                                <input placeholder="Año (2025)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
-                                <input placeholder="Mes (01-12)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} />
-                                <input placeholder="Día (01-31)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} />
-                                <button onClick={()=>setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 px-3 py-2 rounded font-bold text-[10px]">LIMPIAR</button>
-                                <button onClick={generateReportPDF} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-[10px] flex items-center gap-2 ml-auto"><i data-lucide="file-down" size={14}></i> PDF REPORTE</button>
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="admin-card lg:col-span-2"><canvas ref={chartRef}></canvas></div>
-                                <div className="admin-card overflow-y-auto max-h-[400px]">
-                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Lista de Ventas</h3>
-                                    {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).length === 0 
-                                        ? <p className="text-xs opacity-50 italic">No hay datos.</p> 
-                                        : sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => (
-                                        <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between">
-                                            <span>{s.date} - {s.concept}</span>
-                                            <b className="text-emerald-600">${s.amount.toLocaleString()}</b>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* VISTA: INVENTARIO */}
+                    {/* 2. INVENTARIO (CON COSTO) */}
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
-                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                <input placeholder="Nombre Ítem" className="p-3 border rounded-xl bg-slate-50 text-xs" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
-                                <input placeholder="Precio" type="number" className="p-3 border rounded-xl bg-slate-50 text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
-                                <div className="flex gap-2">
-                                    <select className="flex-grow p-3 border rounded-xl font-bold bg-slate-50 text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
-                                        {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    <button onClick={()=>{const c = prompt("Nombre de nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 rounded-xl font-bold hover:bg-slate-300">+</button>
-                                </div>
-                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase p-3 rounded-xl bg-slate-100 cursor-pointer">
-                                    <input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> ¿Solo Encargo?
-                                </label>
+                             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                                <input placeholder="Nombre" className="p-3 border rounded-xl text-xs col-span-2" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
+                                <input placeholder="Precio Venta ($)" type="number" className="p-3 border rounded-xl text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
+                                <input placeholder="Costo Adquisición ($)" type="number" className="p-3 border rounded-xl text-xs bg-yellow-50" value={newItem.cost} onChange={e=>setNewItem({...newItem, cost:parseInt(e.target.value)})} />
+                                <select className="p-3 border rounded-xl font-bold text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
+                                    {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
                             </div>
-                            <div className="flex items-center gap-4 border-t pt-4">
+                            <div className="flex gap-4 items-center">
+                                <button onClick={()=>{const c = prompt("Nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 py-2 rounded-lg font-bold text-xs">+</button>
+                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase cursor-pointer"><input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> ¿Solo Encargo?</label>
                                 <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
-                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", img:""})}} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold uppercase text-xs w-full hover:bg-blue-700 transition">AGREGAR AL CATÁLOGO</button>
+                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", cost:"", img:""})}} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs ml-auto">AGREGAR ÍTEM</button>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
                                 {inventory.map(i=>(
-                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group hover:shadow-md transition">
+                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group">
                                         <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100 transition"><i data-lucide="trash-2" size={14}></i></button>
                                         <p className="text-[8px] font-black uppercase opacity-30">{i.category}</p>
-                                        {i.onDemand && <p className="text-[8px] text-orange-500 font-bold uppercase bg-orange-100 inline-block px-1 rounded">ENCARGO</p>}
-                                        <p className="font-bold text-[10px] uppercase truncate mt-1">{i.name}</p>
-                                        <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
+                                        <p className="font-bold text-[10px] uppercase truncate">{i.name}</p>
+                                        <div className="flex justify-between mt-2">
+                                            <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
+                                            {i.cost && <p className="text-slate-400 text-[9px]">Costo: ${i.cost.toLocaleString()}</p>}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* VISTA: CONFIGURACIÓN */}
+                    {/* 3. CONTABILIDAD (NUEVA PESTAÑA) */}
+                    {adminTab === 'accounting' && (
+                        <div className="space-y-8 animate-in fade-in">
+                            {/* Tarjetas de Resumen */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg">
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos Totales</p>
+                                    <h2 className="text-3xl font-black">${totalIncome.toLocaleString()}</h2>
+                                </div>
+                                <div className="bg-red-500 text-white p-6 rounded-2xl shadow-lg">
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos Totales</p>
+                                    <h2 className="text-3xl font-black">${totalExpenses.toLocaleString()}</h2>
+                                </div>
+                                <div className={`${netProfit >= 0 ? 'bg-blue-600' : 'bg-orange-500'} text-white p-6 rounded-2xl shadow-lg`}>
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Utilidad Neta (Ganancia)</p>
+                                    <h2 className="text-3xl font-black flex items-center gap-2">
+                                        ${netProfit.toLocaleString()} 
+                                        {netProfit >= 0 ? <i data-lucide="trending-up"></i> : <i data-lucide="trending-down"></i>}
+                                    </h2>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                {/* Registrar Gasto */}
+                                <div className="admin-card space-y-4">
+                                    <h3 className="font-bold text-red-500 uppercase text-xs flex items-center gap-2"><i data-lucide="minus-circle" size={14}></i> Registrar Nuevo Gasto</h3>
+                                    <input placeholder="Concepto (Ej: Pago Luz, Transporte)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} />
+                                    <div className="flex gap-2">
+                                        <input placeholder="Monto ($)" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} />
+                                        <input type="date" className="w-32 p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.date} onChange={e=>setNewExpense({...newExpense, date:e.target.value})} />
+                                    </div>
+                                    <button onClick={()=>{
+                                        if(newExpense.concept && newExpense.amount){
+                                            setExpenses([ {id:Date.now(), ...newExpense}, ...expenses ]);
+                                            setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});
+                                        }
+                                    }} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs hover:bg-red-600">Registrar Egreso</button>
+                                </div>
+
+                                {/* Historial Gastos */}
+                                <div className="admin-card overflow-y-auto max-h-[400px]">
+                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Últimos Gastos</h3>
+                                    {expenses.map(e => (
+                                        <div key={e.id} className="flex justify-between items-center border-b py-3 hover:bg-slate-50 px-2">
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-400">{e.date}</p>
+                                                <p className="text-xs font-bold uppercase">{e.concept}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p>
+                                                <button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Análisis Inventario */}
+                            <div className="admin-card">
+                                <h3 className="font-bold text-blue-600 uppercase text-xs mb-4">Rentabilidad del Inventario (Costo vs Venta)</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                        <thead><tr className="border-b text-slate-400 uppercase"><th className="pb-2">Producto</th><th className="pb-2">Costo</th><th className="pb-2">P. Venta</th><th className="pb-2">Margen</th></tr></thead>
+                                        <tbody>
+                                            {inventory.map(i => {
+                                                const margin = i.price && i.cost ? i.price - i.cost : 0;
+                                                const percent = i.cost ? Math.round((margin / i.cost) * 100) : 0;
+                                                return (
+                                                    <tr key={i.id} className="border-b last:border-0 hover:bg-slate-50">
+                                                        <td className="py-2 font-bold uppercase">{i.name}</td>
+                                                        <td className="py-2 text-slate-500">${i.cost?.toLocaleString() || 0}</td>
+                                                        <td className="py-2 font-black">${i.price?.toLocaleString()}</td>
+                                                        <td className="py-2">
+                                                            <span className={`px-2 py-1 rounded-full text-[9px] font-bold ${margin > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
+                                                                ${margin.toLocaleString()} ({percent}%)
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 4. REPORTES */}
+                    {adminTab === 'reports' && (
+                        <div className="space-y-6 animate-in fade-in">
+                            <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap">
+                                <span className="text-[10px] font-bold uppercase opacity-40">Filtro Año:</span>
+                                <input placeholder="2025" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
+                                <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR BALANCE PDF</button>
+                            </div>
+                            <div className="admin-card h-[300px]">
+                                <canvas ref={chartRef}></canvas>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. CONFIGURACIÓN */}
                     {adminTab === 'config' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados (PDF Facturación)</h3>
-                                <input placeholder="Tu Nombre / Razón Social" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
-                                <input placeholder="NIT / Cédula (NO sale en web)" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
-                                <input placeholder="Dirección Física" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
-                                <input placeholder="RUT (Opcional)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.personalRut} onChange={e=>setSettings({...settings, personalRut:e.target.value})} />
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados (PDF)</h3>
+                                <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
+                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
+                                <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
+                                <input placeholder="RUT" className="w-full p-3 border rounded-xl text-xs" value={settings.personalRut} onChange={e=>setSettings({...settings, personalRut:e.target.value})} />
                                 <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div>
                             </div>
                             <div className="admin-card space-y-4">
                                 <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos (Web)</h3>
-                                <input placeholder="Eslogan (Hero)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
-                                <input placeholder="Email Contacto" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
-                                <input placeholder="WhatsApp (57...)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
-                                <textarea placeholder="Texto Pie de Página (Footer)" className="w-full p-3 border rounded-xl h-20 text-xs bg-slate-50" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
-                                
-                                <div className="pt-2 border-t space-y-2">
-                                    <h4 className="text-[10px] font-bold uppercase opacity-60">Redes Sociales (Links)</h4>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <input placeholder="Facebook" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
-                                        <input placeholder="Instagram" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
-                                        <input placeholder="TikTok" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
-                                    </div>
+                                <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
+                                <input placeholder="Email Público" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
+                                <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
+                                <textarea placeholder="Footer" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
+                                <div className="grid grid-cols-3 gap-2 border-t pt-2">
+                                    <input placeholder="FB Link" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
+                                    <input placeholder="IG Link" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
+                                    <input placeholder="TK Link" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
                                 </div>
                                 <div className="pt-2 border-t">
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel (Clic en X para borrar):</label>
+                                    <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel (Clic X para borrar):</label>
                                     <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
                                         {settings.bgImages?.map((img, i) => (
                                             <div key={i} className="relative group flex-shrink-0">
@@ -334,8 +453,7 @@
                                         ))}
                                     </div>
                                     <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" />
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mt-4 mb-1">Logo Web:</label>
-                                    <input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
+                                    <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
                                 </div>
                             </div>
                         </div>
