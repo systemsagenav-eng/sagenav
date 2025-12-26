@@ -29,7 +29,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- TUS LLAVES ---
+        // --- TUS LLAVES (PÉGALAS AQUÍ) ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
@@ -39,7 +39,7 @@
             const [adminTab, setAdminTab] = useState('billing');
             const [loading, setLoading] = useState(true);
 
-            // DATOS GENERALES
+            // DATOS
             const [settings, setSettings] = useState({
                 heroTitle: "SYSTEM.SAGENAV", commercialDesc: "", footerText: "",
                 whatsapp: "", categories: ["Servicios", "Productos"],
@@ -47,9 +47,9 @@
                 socialInsta: "", socialFb: "", socialTiktok: "",
                 bgImages: [], personalLogo: null, navLogo: null
             });
-            const [inventory, setInventory] = useState([]); // Ahora incluye 'cost'
+            const [inventory, setInventory] = useState([]);
             const [sales, setSales] = useState([]);
-            const [expenses, setExpenses] = useState([]); // NUEVO: Gastos
+            const [expenses, setExpenses] = useState([]);
 
             // FORMULARIOS
             const [newItem, setNewItem] = useState({ name: "", price: "", cost: "", category: "Servicios", onDemand: false, img: "" });
@@ -58,7 +58,6 @@
             const [manualItem, setManualItem] = useState({ desc: "", price: "" });
             const [newExpense, setNewExpense] = useState({ concept: "", amount: "", date: new Date().toISOString().split('T')[0] });
             const [reportFilter, setReportFilter] = useState({ day: "", month: "", year: new Date().getFullYear().toString() });
-            const [newCat, setNewCat] = useState("");
             
             const chartRef = useRef(null);
             const myChart = useRef(null);
@@ -71,7 +70,8 @@
 
             async function fetchData() {
                 try {
-                    const { data } = await supabaseClient.from('sagenav_data').select('*');
+                    const { data, error } = await supabaseClient.from('sagenav_data').select('*');
+                    if (error) { alert("Error conectando a BD: " + error.message); }
                     if (data) {
                         setSettings(prev => ({ ...prev, ...(data.find(d => d.key === 'settings')?.value || {}) }));
                         setInventory(data.find(d => d.key === 'inventory')?.value || []);
@@ -111,25 +111,25 @@
                 if (type === 'logo') setSettings({...settings, personalLogo: base64});
                 if (type === 'navLogo') setSettings({...settings, navLogo: base64});
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                alert("Imagen lista.");
+                alert("Imagen cargada (Recuerda Guardar Nube)");
             };
 
             const saveEverything = async () => {
+                // Guardamos todo en bloque
                 const updates = [
                     { key: 'settings', value: settings },
                     { key: 'inventory', value: inventory },
                     { key: 'sales', value: sales },
                     { key: 'expenses', value: expenses }
                 ];
-
-                let errorOccurred = false;
+                
+                let err = false;
                 for (let up of updates) {
-                    const { error } = await supabaseClient.from('sagenav_data').update({ value: up.value }).eq('key', up.key);
-                    if (error) errorOccurred = true;
+                    const { error } = await supabaseClient.from('sagenav_data').upsert({ key: up.key, value: up.value });
+                    if(error) err = true;
                 }
-
-                if (!errorOccurred) alert("✅ Nube Sincronizada (Contabilidad incluida)"); 
-                else alert("❌ Error. Verifica que hayas creado la fila 'expenses' en Supabase.");
+                if (!err) alert("✅ GUARDADO EXITOSO EN LA NUBE");
+                else alert("❌ Error al guardar. Revisa tu conexión.");
             };
 
             const generateInvoicePDF = () => {
@@ -139,86 +139,47 @@
                 
                 doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SAGENAV", 45, 20);
                 doc.setFontSize(8).setFont("helvetica", "normal").text(`NIT/CC: ${settings.personalId || ''} | ${settings.personalAddress || ''}`, 45, 26);
-                if(settings.personalRut) doc.text(`RUT: ${settings.personalRut}`, 45, 31);
-                doc.text(`Email: ${settings.publicEmail || ''} | Tel: ${settings.whatsapp || ''}`, 45, 36);
+                doc.text(`Email: ${settings.publicEmail || ''} | Tel: ${settings.whatsapp || ''}`, 45, 31);
 
-                doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 55, { align: "center" });
-                doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 70);
-                doc.text(`NIT/CC: ${billClient.nit}`, 15, 75);
-                doc.text(`FECHA: ${billClient.date}`, 160, 70);
+                doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 50, { align: "center" });
+                doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 65);
+                doc.text(`NIT/CC: ${billClient.nit}`, 15, 70);
+                doc.text(`FECHA: ${billClient.date}`, 160, 65);
 
                 const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
                 if (manualItem.desc) tableBody.push([1, manualItem.desc.toUpperCase(), `$${parseInt(manualItem.price || 0).toLocaleString()}`, `$${parseInt(manualItem.price || 0).toLocaleString()}`]);
                 
-                doc.autoTable({ startY: 85, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody, headStyles: {fillColor: [15, 23, 42]} });
+                doc.autoTable({ startY: 80, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody });
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
                 doc.save(`CTA_${billClient.name}.pdf`);
                 
                 setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
+                alert("✅ PDF Generado y Venta Registrada");
             };
 
-            const generateReportPDF = () => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                const filteredSales = sales.filter(s => s.date.includes(reportFilter.year));
-                const filteredExpenses = expenses.filter(e => e.date.includes(reportFilter.year));
-                
-                doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE FINANCIERO", 105, 20, { align: "center" });
-                doc.setFontSize(10).setFont("helvetica", "normal").text(`Año: ${reportFilter.year}`, 15, 30);
-                
-                let yPos = 40;
-                doc.text("INGRESOS (VENTAS)", 15, yPos);
-                const salesBody = filteredSales.map(s => [s.date, s.concept, `$${s.amount.toLocaleString()}`]);
-                doc.autoTable({ startY: yPos + 5, head: [['FECHA', 'CLIENTE', 'VALOR']], body: salesBody });
-                
-                yPos = doc.lastAutoTable.finalY + 15;
-                doc.text("EGRESOS (GASTOS)", 15, yPos);
-                const expBody = filteredExpenses.map(e => [e.date, e.concept, `$${e.amount.toLocaleString()}`]);
-                doc.autoTable({ startY: yPos + 5, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: expBody });
-                
-                const totalS = filteredSales.reduce((a,b)=>a+b.amount,0);
-                const totalE = filteredExpenses.reduce((a,b)=>a+b.amount,0);
-                
-                yPos = doc.lastAutoTable.finalY + 15;
-                doc.setFontSize(12).setFont("helvetica", "bold");
-                doc.text(`TOTAL INGRESOS: $${totalS.toLocaleString()}`, 15, yPos);
-                doc.text(`TOTAL GASTOS: $${totalE.toLocaleString()}`, 15, yPos + 7);
-                doc.text(`UTILIDAD NETA: $${(totalS - totalE).toLocaleString()}`, 15, yPos + 14);
-                
-                doc.save(`Balance_${reportFilter.year}.pdf`);
-            };
-
-            // GRÁFICAS UNIFICADAS
+            // Gráfica de Balance (Ingresos vs Gastos)
             useEffect(() => {
-                if (authorized && adminTab === 'reports' && chartRef.current) {
+                if (authorized && (adminTab === 'reports' || adminTab === 'accounting') && chartRef.current) {
                     if (myChart.current) myChart.current.destroy();
                     
-                    // Calcular totales por mes del año seleccionado
-                    const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-                    const incomeData = new Array(12).fill(0);
-                    const expenseData = new Array(12).fill(0);
+                    const filteredSales = sales.filter(s => s.date.includes(reportFilter.year));
+                    const filteredExp = expenses.filter(e => e.date.includes(reportFilter.year));
 
-                    sales.forEach(s => {
-                        if(s.date.startsWith(reportFilter.year)) {
-                            const m = parseInt(s.date.split('-')[1]) - 1;
-                            incomeData[m] += s.amount;
-                        }
-                    });
-                    expenses.forEach(e => {
-                        if(e.date.startsWith(reportFilter.year)) {
-                            const m = parseInt(e.date.split('-')[1]) - 1;
-                            expenseData[m] += e.amount;
-                        }
-                    });
+                    const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+                    const incData = new Array(12).fill(0);
+                    const expData = new Array(12).fill(0);
+
+                    filteredSales.forEach(s => { const m = parseInt(s.date.split('-')[1])-1; if(m>=0) incData[m]+=s.amount; });
+                    filteredExp.forEach(e => { const m = parseInt(e.date.split('-')[1])-1; if(m>=0) expData[m]+=e.amount; });
 
                     myChart.current = new Chart(chartRef.current, {
                         type: 'bar',
                         data: {
                             labels: months,
                             datasets: [
-                                { label: 'Ingresos', data: incomeData, backgroundColor: '#10b981' },
-                                { label: 'Gastos', data: expenseData, backgroundColor: '#ef4444' }
+                                { label: 'Ingresos', data: incData, backgroundColor: '#10b981' },
+                                { label: 'Gastos', data: expData, backgroundColor: '#ef4444' }
                             ]
                         }
                     });
@@ -226,29 +187,29 @@
                 if(authorized) setTimeout(() => lucide.createIcons(), 500);
             }, [adminTab, sales, expenses, authorized, reportFilter]);
 
-            // CALCULOS CONTABLES
+            // Cálculos Totales
             const totalIncome = sales.reduce((sum, item) => sum + (item.amount || 0), 0);
             const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
             const netProfit = totalIncome - totalExpenses;
 
-            if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Cargando Sistema...</div>;
+            if (!authorized || loading) return <div className="p-20 text-center font-tech uppercase animate-pulse">Conectando Sistema...</div>;
 
             return (
                 <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
-                    <header className="flex flex-col md:flex-row justify-between items-center mb-10 bg-slate-900 p-8 rounded-[2rem] text-white shadow-xl">
+                    <header className="flex flex-col md:flex-row justify-between items-center mb-8 bg-slate-900 p-6 rounded-[2rem] text-white shadow-xl">
                         <div className="flex items-center gap-4">
                             {settings.navLogo && <img src={settings.navLogo} className="w-12 h-12 rounded-full border-2 border-blue-500"/>}
                             <div>
                                 <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
-                                <p className="text-[9px] uppercase tracking-widest opacity-60">Command Center</p>
+                                <p className="text-[9px] uppercase tracking-widest opacity-60">Command Center v2.0</p>
                             </div>
                         </div>
                         <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
                     </header>
 
-                    <nav className="flex gap-4 mb-8 border-b overflow-x-auto pb-4 no-scrollbar text-[10px] font-black uppercase tracking-widest">
+                    <nav className="flex flex-wrap gap-4 mb-8 border-b pb-4">
                         {['billing', 'inventory', 'accounting', 'reports', 'config'].map(t => (
-                            <button key={t} onClick={()=>setAdminTab(t)} className={adminTab===t?'tab-active pb-4 px-2':'pb-4 px-2 opacity-50'}>
+                            <button key={t} onClick={()=>setAdminTab(t)} className={`px-4 py-2 rounded-lg font-bold text-xs uppercase transition-colors ${adminTab===t ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>
                                 {t === 'billing' ? 'Facturación' : t === 'inventory' ? 'Inventario' : t === 'accounting' ? 'Contabilidad' : t === 'reports' ? 'Reportes' : 'Ajustes'}
                             </button>
                         ))}
@@ -258,25 +219,26 @@
                     {adminTab === 'billing' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Nueva Cuenta de Cobro</h3>
-                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl bg-slate-50 text-xs" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
-                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl bg-slate-50 text-xs" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
-                                <input type="date" className="w-full p-3 border rounded-xl bg-slate-50 font-bold text-xs" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
-                                <select className="w-full p-3 border rounded-xl bg-slate-50 text-xs" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
-                                    <option value="">Añadir ítem...</option>
-                                    {inventory.map(i=><option key={i.id} value={i.id}>{i.name} - ${i.price}</option>)}
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Nueva Factura</h3>
+                                <input placeholder="Cliente" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
+                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
+                                <input type="date" className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
+                                <select className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
+                                    <option value="">+ Añadir ítem del inventario...</option>
+                                    {inventory.map(i=><option key={i.id} value={i.id}>{i.name} - ${i.price.toLocaleString()}</option>)}
                                 </select>
                                 <div className="flex gap-2">
-                                    <input placeholder="Manual..." className="flex-grow p-3 border rounded-xl bg-slate-50 text-xs" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
-                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl bg-slate-50 text-xs" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
+                                    <input placeholder="Manual..." className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
+                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
                                 </div>
                                 <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF</button>
                             </div>
-                            <div className="admin-card flex flex-col h-full">
-                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle Factura</h3>
+                            <div className="admin-card flex flex-col h-full min-h-[300px]">
+                                <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle de Items</h3>
                                 <div className="flex-grow space-y-2 overflow-y-auto max-h-[300px]">
-                                    {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase italic font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500">×</button></div>))}
-                                    {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase italic font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
+                                    {billItems.length === 0 && !manualItem.desc && <p className="text-center text-xs opacity-30 mt-10">Agrega productos para ver el resumen aquí.</p>}
+                                    {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 px-2 rounded">x</button></div>))}
+                                    {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
                                 </div>
                                 <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase">
                                     <span>Total:</span>
@@ -286,123 +248,77 @@
                         </div>
                     )}
 
-                    {/* 2. INVENTARIO (CON COSTO) */}
+                    {/* 2. INVENTARIO */}
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
                              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                                <input placeholder="Nombre" className="p-3 border rounded-xl text-xs col-span-2" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
-                                <input placeholder="Precio Venta ($)" type="number" className="p-3 border rounded-xl text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
-                                <input placeholder="Costo Adquisición ($)" type="number" className="p-3 border rounded-xl text-xs bg-yellow-50" value={newItem.cost} onChange={e=>setNewItem({...newItem, cost:parseInt(e.target.value)})} />
+                                <input placeholder="Nombre Producto" className="p-3 border rounded-xl text-xs col-span-2" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
+                                <input placeholder="Precio Venta" type="number" className="p-3 border rounded-xl text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
+                                <input placeholder="Costo (Opcional)" type="number" className="p-3 border rounded-xl text-xs bg-yellow-50" value={newItem.cost} onChange={e=>setNewItem({...newItem, cost:parseInt(e.target.value)})} />
                                 <select className="p-3 border rounded-xl font-bold text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
                                     {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                             </div>
-                            <div className="flex gap-4 items-center">
-                                <button onClick={()=>{const c = prompt("Nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 py-2 rounded-lg font-bold text-xs">+</button>
-                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase cursor-pointer"><input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> ¿Solo Encargo?</label>
+                            <div className="flex flex-wrap gap-4 items-center">
+                                <button onClick={()=>{const c = prompt("Nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 py-2 rounded-lg font-bold text-xs">+ Categoría</button>
+                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase cursor-pointer"><input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> Solo Encargo</label>
                                 <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
                                 <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", cost:"", img:""})}} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs ml-auto">AGREGAR ÍTEM</button>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
+                                {inventory.length === 0 && <p className="col-span-full text-center text-sm opacity-40 py-10">No hay productos en inventario. ¡Agrega el primero arriba!</p>}
                                 {inventory.map(i=>(
-                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group">
-                                        <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100 transition"><i data-lucide="trash-2" size={14}></i></button>
+                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group hover:shadow-md">
+                                        <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-white bg-red-500 rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-lg z-10">×</button>
                                         <p className="text-[8px] font-black uppercase opacity-30">{i.category}</p>
-                                        <p className="font-bold text-[10px] uppercase truncate">{i.name}</p>
-                                        <div className="flex justify-between mt-2">
-                                            <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
-                                            {i.cost && <p className="text-slate-400 text-[9px]">Costo: ${i.cost.toLocaleString()}</p>}
-                                        </div>
+                                        {i.onDemand && <span className="bg-orange-100 text-orange-600 text-[8px] font-bold px-1 rounded">ENCARGO</span>}
+                                        <p className="font-bold text-[10px] uppercase truncate mt-1">{i.name}</p>
+                                        <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* 3. CONTABILIDAD (NUEVA PESTAÑA) */}
+                    {/* 3. CONTABILIDAD */}
                     {adminTab === 'accounting' && (
                         <div className="space-y-8 animate-in fade-in">
-                            {/* Tarjetas de Resumen */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg">
-                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos Totales</p>
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos</p>
                                     <h2 className="text-3xl font-black">${totalIncome.toLocaleString()}</h2>
                                 </div>
                                 <div className="bg-red-500 text-white p-6 rounded-2xl shadow-lg">
-                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos Totales</p>
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos</p>
                                     <h2 className="text-3xl font-black">${totalExpenses.toLocaleString()}</h2>
                                 </div>
                                 <div className={`${netProfit >= 0 ? 'bg-blue-600' : 'bg-orange-500'} text-white p-6 rounded-2xl shadow-lg`}>
-                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Utilidad Neta (Ganancia)</p>
-                                    <h2 className="text-3xl font-black flex items-center gap-2">
-                                        ${netProfit.toLocaleString()} 
-                                        {netProfit >= 0 ? <i data-lucide="trending-up"></i> : <i data-lucide="trending-down"></i>}
-                                    </h2>
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Utilidad Neta</p>
+                                    <h2 className="text-3xl font-black">${netProfit.toLocaleString()}</h2>
                                 </div>
                             </div>
-
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                {/* Registrar Gasto */}
                                 <div className="admin-card space-y-4">
-                                    <h3 className="font-bold text-red-500 uppercase text-xs flex items-center gap-2"><i data-lucide="minus-circle" size={14}></i> Registrar Nuevo Gasto</h3>
-                                    <input placeholder="Concepto (Ej: Pago Luz, Transporte)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} />
+                                    <h3 className="font-bold text-red-500 uppercase text-xs">Registrar Gasto</h3>
+                                    <input placeholder="Concepto (Luz, Arriendo, Repuestos)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} />
                                     <div className="flex gap-2">
-                                        <input placeholder="Monto ($)" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} />
+                                        <input placeholder="Monto" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} />
                                         <input type="date" className="w-32 p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.date} onChange={e=>setNewExpense({...newExpense, date:e.target.value})} />
                                     </div>
-                                    <button onClick={()=>{
-                                        if(newExpense.concept && newExpense.amount){
-                                            setExpenses([ {id:Date.now(), ...newExpense}, ...expenses ]);
-                                            setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});
-                                        }
-                                    }} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs hover:bg-red-600">Registrar Egreso</button>
+                                    <button onClick={()=>{if(newExpense.concept && newExpense.amount){setExpenses([{id:Date.now(), ...newExpense}, ...expenses]); setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});}}} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs">Registrar Egreso</button>
                                 </div>
-
-                                {/* Historial Gastos */}
-                                <div className="admin-card overflow-y-auto max-h-[400px]">
+                                <div className="admin-card overflow-y-auto max-h-[300px]">
                                     <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Últimos Gastos</h3>
+                                    {expenses.length === 0 && <p className="text-xs opacity-30">No hay gastos registrados.</p>}
                                     {expenses.map(e => (
-                                        <div key={e.id} className="flex justify-between items-center border-b py-3 hover:bg-slate-50 px-2">
-                                            <div>
-                                                <p className="text-[10px] font-bold text-slate-400">{e.date}</p>
-                                                <p className="text-xs font-bold uppercase">{e.concept}</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p>
-                                                <button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button>
-                                            </div>
+                                        <div key={e.id} className="flex justify-between items-center border-b py-2 hover:bg-slate-50 px-2">
+                                            <div><p className="text-[10px] font-bold text-slate-400">{e.date}</p><p className="text-xs font-bold uppercase">{e.concept}</p></div>
+                                            <div className="text-right"><p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p><button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button></div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
-
-                            {/* Análisis Inventario */}
-                            <div className="admin-card">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs mb-4">Rentabilidad del Inventario (Costo vs Venta)</h3>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs">
-                                        <thead><tr className="border-b text-slate-400 uppercase"><th className="pb-2">Producto</th><th className="pb-2">Costo</th><th className="pb-2">P. Venta</th><th className="pb-2">Margen</th></tr></thead>
-                                        <tbody>
-                                            {inventory.map(i => {
-                                                const margin = i.price && i.cost ? i.price - i.cost : 0;
-                                                const percent = i.cost ? Math.round((margin / i.cost) * 100) : 0;
-                                                return (
-                                                    <tr key={i.id} className="border-b last:border-0 hover:bg-slate-50">
-                                                        <td className="py-2 font-bold uppercase">{i.name}</td>
-                                                        <td className="py-2 text-slate-500">${i.cost?.toLocaleString() || 0}</td>
-                                                        <td className="py-2 font-black">${i.price?.toLocaleString()}</td>
-                                                        <td className="py-2">
-                                                            <span className={`px-2 py-1 rounded-full text-[9px] font-bold ${margin > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100'}`}>
-                                                                ${margin.toLocaleString()} ({percent}%)
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                            <div className="admin-card h-[300px]"><canvas ref={chartRef}></canvas></div>
                         </div>
                     )}
 
@@ -412,48 +328,49 @@
                             <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap">
                                 <span className="text-[10px] font-bold uppercase opacity-40">Filtro Año:</span>
                                 <input placeholder="2025" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
-                                <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR BALANCE PDF</button>
                             </div>
-                            <div className="admin-card h-[300px]">
-                                <canvas ref={chartRef}></canvas>
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <div className="admin-card lg:col-span-2 h-[350px]"><canvas ref={chartRef}></canvas></div>
+                                <div className="admin-card overflow-y-auto max-h-[400px]">
+                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle Ventas</h3>
+                                    {sales.length === 0 && <p className="text-xs opacity-30">No hay ventas registradas.</p>}
+                                    {sales.filter(s => s.date.includes(reportFilter.year)).map(s => (
+                                        <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between hover:bg-slate-50 px-1">
+                                            <span>{s.date} - {s.concept}</span>
+                                            <b className="text-emerald-600">${s.amount.toLocaleString()}</b>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 5. CONFIGURACIÓN */}
+                    {/* 5. AJUSTES */}
                     {adminTab === 'config' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
                                 <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados (PDF)</h3>
                                 <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
-                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
+                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
                                 <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
-                                <input placeholder="RUT" className="w-full p-3 border rounded-xl text-xs" value={settings.personalRut} onChange={e=>setSettings({...settings, personalRut:e.target.value})} />
                                 <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div>
                             </div>
                             <div className="admin-card space-y-4">
                                 <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos (Web)</h3>
                                 <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
-                                <input placeholder="Email Público" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
                                 <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
-                                <textarea placeholder="Footer" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
-                                <div className="grid grid-cols-3 gap-2 border-t pt-2">
-                                    <input placeholder="FB Link" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
-                                    <input placeholder="IG Link" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
-                                    <input placeholder="TK Link" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
-                                </div>
+                                <textarea placeholder="Footer Text" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
                                 <div className="pt-2 border-t">
                                     <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel (Clic X para borrar):</label>
-                                    <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+                                    <div className="flex gap-2 mb-2 overflow-x-auto pb-2 min-h-[50px]">
                                         {settings.bgImages?.map((img, i) => (
                                             <div key={i} className="relative group flex-shrink-0">
                                                 <img src={img} className="w-16 h-12 object-cover rounded border" />
-                                                <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[8px] flex items-center justify-center shadow-md">x</button>
+                                                <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-[10px] flex items-center justify-center shadow-lg hover:scale-110 transition z-10 border-2 border-white">X</button>
                                             </div>
                                         ))}
                                     </div>
                                     <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" />
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
                                 </div>
                             </div>
                         </div>
