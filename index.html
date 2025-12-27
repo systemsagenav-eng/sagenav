@@ -28,7 +28,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- TUS LLAVES ---
+        // --- TUS LLAVES (IMPORTANTE: PEGAR AQUÍ) ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
@@ -89,9 +89,9 @@
 
             if (!settings) return <div className="h-screen flex items-center justify-center font-tech animate-pulse text-blue-600 tracking-widest">CARGANDO...</div>;
 
-            // --- FILTRO INTELIGENTE: CATEGORÍA + STOCK > 0 (O SERVICIOS) ---
+            // FILTRO: Categoría + Stock > 0 + Orden A-Z
             const filteredItems = (activeTab === 'Todos' ? inventory : inventory.filter(i => i.category === activeTab))
-                .filter(i => (i.stock > 0 || i.onDemand)) // SOLO MUESTRA SI HAY STOCK O ES ENCARGO
+                .filter(i => (i.stock > 0 || i.onDemand))
                 .sort((a, b) => a.name.localeCompare(b.name));
 
             return (
@@ -177,6 +177,11 @@
                             </div>
                         </div>
                     </footer>
+                    
+                    {/* BOTÓN FLOTANTE WHATSAPP (NUEVO) */}
+                    <a href={`https://wa.me/${settings?.whatsapp}`} target="_blank" className="fixed bottom-24 right-4 md:bottom-10 md:right-10 bg-[#25D366] text-white p-3 md:p-4 rounded-full shadow-2xl z-40 hover:scale-110 transition-transform duration-300 flex items-center justify-center animate-bounce" style={{animationDuration: '3s'}}>
+                        <i data-lucide="message-circle" className="w-6 h-6 md:w-8 md:h-8"></i>
+                    </a>
 
                     {cart.length > 0 && (
                         <div className="fixed bottom-0 left-0 w-full bg-slate-900 text-white p-3 md:p-4 shadow-xl z-50 slide-up flex justify-between items-center px-4 md:px-20 border-t border-slate-700">
@@ -221,7 +226,7 @@
                                         <span className="text-blue-600">${cartTotal.toLocaleString()}</span>
                                     </div>
                                     <button onClick={handleWhatsApp} className="w-full bg-[#25D366] text-white py-3 md:py-4 rounded-xl font-bold uppercase text-[10px] md:text-xs flex items-center justify-center gap-2 hover:brightness-110 transition-all shadow-lg">
-                                        <i data-lucide="message-circle" fill="white"></i> Enviar al Doctor
+                                        <i data-lucide="message-circle" fill="white"></i> Enviar
                                     </button>
                                 </div>
                             </div>
