@@ -29,7 +29,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- TUS LLAVES (PÉGALAS AQUÍ DE NUEVO) ---
+        // --- TUS LLAVES ---
         const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
         const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
@@ -53,7 +53,7 @@
             const [expenses, setExpenses] = useState([]);
 
             // FORMULARIOS
-            const [newItem, setNewItem] = useState({ name: "", price: "", cost: "", category: "Servicios", onDemand: false, img: "" });
+            const [newItem, setNewItem] = useState({ name: "", price: "", cost: "", stock: 1, category: "Servicios", onDemand: false, img: "" });
             const [billClient, setBillClient] = useState({ name: "", nit: "", date: new Date().toISOString().split('T')[0] });
             const [billItems, setBillItems] = useState([]);
             const [manualItem, setManualItem] = useState({ desc: "", price: "" });
@@ -69,9 +69,7 @@
                     setAuthorized(true);
                     setLoading(true);
                     fetchData();
-                } else {
-                    alert("Clave Incorrecta.");
-                }
+                } else { alert("Clave Incorrecta."); }
             };
 
             async function fetchData() {
@@ -116,14 +114,14 @@
                 if (type === 'logo') setSettings({...settings, personalLogo: base64});
                 if (type === 'navLogo') setSettings({...settings, navLogo: base64});
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                alert("Imagen lista (Guarda en la Nube)");
+                alert("Imagen lista.");
             };
 
-            const saveEverything = async () => {
+            const saveEverything = async (overrideInventory = null, overrideSales = null) => {
                 const updates = [
                     { key: 'settings', value: settings },
-                    { key: 'inventory', value: inventory },
-                    { key: 'sales', value: sales },
+                    { key: 'inventory', value: overrideInventory || inventory },
+                    { key: 'sales', value: overrideSales || sales },
                     { key: 'expenses', value: expenses }
                 ];
                 let err = false;
@@ -131,10 +129,40 @@
                     const { error } = await supabaseClient.from('sagenav_data').upsert({ key: up.key, value: up.value });
                     if(error) err = true;
                 }
-                if (!err) alert("✅ NUBE SINCRONIZADA"); else alert("❌ Error de conexión (Verifica llaves)");
+                if (!err) {
+                     if(!overrideInventory) alert("✅ NUBE SINCRONIZADA"); 
+                } else alert("❌ Error de conexión");
+            };
+
+            // ACTUALIZAR STOCK RAPIDO
+            const updateStock = (id, delta) => {
+                const updatedInv = inventory.map(i => {
+                    if (i.id === id) {
+                        const newStock = (i.stock || 0) + delta;
+                        return { ...i, stock: newStock < 0 ? 0 : newStock };
+                    }
+                    return i;
+                });
+                setInventory(updatedInv);
             };
 
             const generateInvoicePDF = () => {
+                // 1. DESCONTAR INVENTARIO
+                const soldCounts = {};
+                billItems.forEach(item => { soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; });
+
+                const updatedInventory = inventory.map(item => {
+                    if (soldCounts[item.id]) {
+                        // Si es servicio u onDemand no restamos stock (o sí, depende de ti, aquí asumimos que no es crítico, pero restamos para llevar control)
+                        // Si quieres que onDemand NO reste, pon: if(item.onDemand) return item;
+                        let newStock = (item.stock || 0) - soldCounts[item.id];
+                        if (newStock < 0) newStock = 0;
+                        return { ...item, stock: newStock };
+                    }
+                    return item;
+                });
+
+                // 2. GENERAR PDF
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
@@ -145,30 +173,36 @@
                 doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 65);
                 doc.text(`NIT/CC: ${billClient.nit}`, 15, 70);
                 doc.text(`FECHA: ${billClient.date}`, 160, 65);
+                
                 const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
                 if (manualItem.desc) tableBody.push([1, manualItem.desc.toUpperCase(), `$${parseInt(manualItem.price || 0).toLocaleString()}`, `$${parseInt(manualItem.price || 0).toLocaleString()}`]);
                 doc.autoTable({ startY: 80, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody });
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
                 doc.save(`CTA_${billClient.name}.pdf`);
-                setSales([{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales]);
+                
+                // 3. GUARDAR CAMBIOS (Venta + Nuevo Inventario)
+                const newSales = [{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales];
+                setInventory(updatedInventory);
+                setSales(newSales);
+                
+                // Guardado automático crítico para actualizar stock en nube
+                saveEverything(updatedInventory, newSales); 
+                alert("✅ Venta registrada y Stock descontado automáticamente.");
+                setBillItems([]);
+                setManualItem({ desc: "", price: "" });
             };
 
             const generateReportPDF = () => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
-                const filtered = sales.filter(s => 
-                    s.date.includes(reportFilter.year) && 
-                    s.date.includes(reportFilter.month) && 
-                    s.date.includes(reportFilter.day)
-                );
+                const filtered = sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day));
                 doc.setFont("helvetica", "bold").setFontSize(16).text("REPORTE VENTAS", 105, 20, { align: "center" });
                 doc.setFontSize(10).setFont("helvetica", "normal").text(`Filtro: ${reportFilter.year}-${reportFilter.month||'MM'}-${reportFilter.day||'DD'}`, 15, 30);
-                
                 const tableBody = filtered.map(s => [s.date, s.concept.toUpperCase(), `$${s.amount.toLocaleString()}`]);
                 doc.autoTable({ startY: 40, head: [['FECHA', 'CONCEPTO', 'VALOR']], body: tableBody });
                 const total = filtered.reduce((acc, s) => acc + s.amount, 0);
-                doc.setFont("helvetica", "bold").text(`TOTAL PERIODO: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
+                doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
                 doc.save(`Reporte_Ventas.pdf`);
             };
 
@@ -182,34 +216,23 @@
                     const expData = new Array(12).fill(0);
                     filteredSales.forEach(s => { const m = parseInt(s.date.split('-')[1])-1; if(m>=0) incData[m]+=s.amount; });
                     filteredExp.forEach(e => { const m = parseInt(e.date.split('-')[1])-1; if(m>=0) expData[m]+=e.amount; });
-                    myChart.current = new Chart(chartRef.current, {
-                        type: 'bar',
-                        data: {
-                            labels: months,
-                            datasets: [{ label: 'Ingresos', data: incData, backgroundColor: '#10b981' }, { label: 'Gastos', data: expData, backgroundColor: '#ef4444' }]
-                        }
-                    });
+                    myChart.current = new Chart(chartRef.current, { type: 'bar', data: { labels: months, datasets: [{ label: 'Ingresos', data: incData, backgroundColor: '#10b981' }, { label: 'Gastos', data: expData, backgroundColor: '#ef4444' }] } });
                 }
                 if(authorized) setTimeout(() => lucide.createIcons(), 500);
             }, [adminTab, sales, expenses, authorized, reportFilter]);
 
-            // PANTALLA DE BLOQUEO
-            if (!authorized) {
-                return (
-                    <div className="h-screen w-full flex flex-col items-center justify-center login-screen text-white p-4">
-                        <div className="bg-white/10 backdrop-blur-lg p-10 rounded-3xl border border-white/20 shadow-2xl text-center max-w-sm w-full animate-in zoom-in">
-                            <i data-lucide="shield-lock" className="w-16 h-16 mx-auto mb-4 text-blue-400"></i>
-                            <h1 className="text-2xl font-black font-tech mb-2">SYSTEM.SAGENAV</h1>
-                            <p className="text-xs uppercase tracking-widest opacity-60 mb-6">Acceso Restringido</p>
-                            <input type="password" placeholder="Clave de Acceso" className="w-full p-4 rounded-xl text-center bg-black/50 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-blue-500 mb-4 font-tech tracking-widest text-lg" value={passInput} onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
-                            <button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg shadow-blue-900/50">Desbloquear</button>
-                        </div>
+            if (!authorized) return (
+                <div className="h-screen w-full flex flex-col items-center justify-center login-screen text-white p-4">
+                    <div className="bg-white/10 backdrop-blur-lg p-10 rounded-3xl border border-white/20 shadow-2xl text-center max-w-sm w-full animate-in zoom-in">
+                        <i data-lucide="shield-lock" className="w-16 h-16 mx-auto mb-4 text-blue-400"></i>
+                        <h1 className="text-2xl font-black font-tech mb-2">SYSTEM.SAGENAV</h1>
+                        <input type="password" placeholder="Clave de Acceso" className="w-full p-4 rounded-xl text-center bg-black/50 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-blue-500 mb-4 font-tech tracking-widest text-lg" value={passInput} onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+                        <button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg">Desbloquear</button>
                     </div>
-                );
-            }
+                </div>
+            );
 
             if (loading) return <div className="h-screen flex items-center justify-center font-tech uppercase animate-pulse">Conectando...</div>;
-
             const totalIncome = sales.reduce((sum, item) => sum + (item.amount || 0), 0);
             const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
             const netProfit = totalIncome - totalExpenses;
@@ -219,19 +242,13 @@
                     <header className="flex flex-col md:flex-row justify-between items-center mb-8 bg-slate-900 p-6 rounded-[2rem] text-white shadow-xl">
                         <div className="flex items-center gap-4">
                             {settings.navLogo && <img src={settings.navLogo} className="w-12 h-12 rounded-full border-2 border-blue-500"/>}
-                            <div>
-                                <h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1>
-                                <p className="text-[9px] uppercase tracking-widest opacity-60">Command Center</p>
-                            </div>
+                            <div><h1 className="text-xl font-black font-tech uppercase italic">System.Sagenav</h1><p className="text-[9px] uppercase tracking-widest opacity-60">Command Center</p></div>
                         </div>
-                        <button onClick={saveEverything} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2 mt-4 md:mt-0"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
+                        <button onClick={()=>saveEverything()} className="bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-xs flex items-center gap-2 mt-4 md:mt-0"><i data-lucide="cloud"></i> GUARDAR NUBE</button>
                     </header>
-
                     <nav className="flex flex-wrap gap-4 mb-8 border-b pb-4">
                         {['billing', 'inventory', 'accounting', 'reports', 'config'].map(t => (
-                            <button key={t} onClick={()=>setAdminTab(t)} className={`px-4 py-2 rounded-lg font-bold text-xs uppercase transition-colors ${adminTab===t ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>
-                                {t === 'billing' ? 'Facturación' : t === 'inventory' ? 'Inventario' : t === 'accounting' ? 'Contabilidad' : t === 'reports' ? 'Reportes' : 'Ajustes'}
-                            </button>
+                            <button key={t} onClick={()=>setAdminTab(t)} className={`px-4 py-2 rounded-lg font-bold text-xs uppercase transition-colors ${adminTab===t ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>{t === 'billing' ? 'Facturación' : t === 'inventory' ? 'Inventario' : t === 'accounting' ? 'Contabilidad' : t === 'reports' ? 'Reportes' : 'Ajustes'}</button>
                         ))}
                     </nav>
 
@@ -243,14 +260,11 @@
                                 <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
                                 <input type="date" className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
                                 <select className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}>
-                                    <option value="">+ Añadir ítem del inventario...</option>
-                                    {inventory.map(i=><option key={i.id} value={i.id}>{i.name} - ${i.price.toLocaleString()}</option>)}
+                                    <option value="">+ Añadir ítem (Solo con Stock > 0)</option>
+                                    {inventory.filter(i => (i.stock > 0 || i.onDemand)).map(i=><option key={i.id} value={i.id}>{i.name} (${i.price.toLocaleString()}) - Stock: {i.onDemand ? 'Encargo' : i.stock}</option>)}
                                 </select>
-                                <div className="flex gap-2">
-                                    <input placeholder="Manual..." className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
-                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
-                                </div>
-                                <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF</button>
+                                <div className="flex gap-2"><input placeholder="Manual..." className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} /><input placeholder="$" type="number" className="w-24 p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} /></div>
+                                <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF & DESCONTAR</button>
                             </div>
                             <div className="admin-card flex flex-col h-full min-h-[300px]">
                                 <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle</h3>
@@ -258,145 +272,50 @@
                                     {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 px-2 rounded">x</button></div>))}
                                     {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
                                 </div>
-                                <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase">
-                                    <span>Total:</span>
-                                    <span className="text-emerald-600">${(billItems.reduce((a,b)=>a+b.price,0) + parseInt(manualItem.price||0)).toLocaleString()}</span>
-                                </div>
+                                <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase"><span>Total:</span><span className="text-emerald-600">${(billItems.reduce((a,b)=>a+b.price,0) + parseInt(manualItem.price||0)).toLocaleString()}</span></div>
                             </div>
                         </div>
                     )}
 
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
-                             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                             <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
                                 <input placeholder="Nombre Producto" className="p-3 border rounded-xl text-xs col-span-2" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
                                 <input placeholder="Precio Venta" type="number" className="p-3 border rounded-xl text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
-                                <input placeholder="Costo (Opcional)" type="number" className="p-3 border rounded-xl text-xs bg-yellow-50" value={newItem.cost} onChange={e=>setNewItem({...newItem, cost:parseInt(e.target.value)})} />
-                                <select className="p-3 border rounded-xl font-bold text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>
-                                    {settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
+                                <input placeholder="Costo" type="number" className="p-3 border rounded-xl text-xs bg-yellow-50" value={newItem.cost} onChange={e=>setNewItem({...newItem, cost:parseInt(e.target.value)})} />
+                                <input placeholder="Stock Inicial" type="number" className="p-3 border rounded-xl text-xs bg-blue-50 font-bold" value={newItem.stock} onChange={e=>setNewItem({...newItem, stock:parseInt(e.target.value)})} />
+                                <select className="p-3 border rounded-xl font-bold text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>{settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}</select>
                             </div>
                             <div className="flex flex-wrap gap-4 items-center">
-                                <button onClick={()=>{const c = prompt("Nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 py-2 rounded-lg font-bold text-xs">+ Categoría</button>
+                                <button onClick={()=>{const c = prompt("Nueva Categoría:"); if(c) setSettings({...settings, categories:[...settings.categories, c]});}} className="bg-slate-200 px-3 py-2 rounded-lg font-bold text-xs">+ Cat</button>
                                 <label className="flex items-center gap-2 text-[10px] font-bold uppercase cursor-pointer"><input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> Solo Encargo</label>
                                 <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
-                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", cost:"", img:""})}} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs ml-auto">AGREGAR ÍTEM</button>
+                                <button onClick={()=>{setInventory([...inventory, {...newItem, id:Date.now()}]); setNewItem({...newItem, name:"", price:"", cost:"", stock:1, img:""})}} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs ml-auto">AGREGAR ÍTEM</button>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
                                 {inventory.map(i=>(
-                                    <div key={i.id} className="p-3 border rounded-2xl bg-white shadow-sm relative group hover:shadow-md">
+                                    <div key={i.id} className={`p-3 border rounded-2xl bg-white shadow-sm relative group hover:shadow-md ${(!i.stock || i.stock === 0) && !i.onDemand ? 'opacity-60 bg-red-50' : ''}`}>
                                         <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute top-2 right-2 text-white bg-red-500 rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-lg z-10">×</button>
                                         <p className="text-[8px] font-black uppercase opacity-30">{i.category}</p>
                                         {i.onDemand && <span className="bg-orange-100 text-orange-600 text-[8px] font-bold px-1 rounded">ENCARGO</span>}
                                         <p className="font-bold text-[10px] uppercase truncate mt-1">{i.name}</p>
-                                        <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
+                                        <div className="flex justify-between items-center mt-2">
+                                            <p className="text-blue-600 font-black text-xs">${i.price?.toLocaleString()}</p>
+                                            {!i.onDemand && (
+                                                <div className="flex items-center gap-1 bg-slate-100 rounded px-1">
+                                                    <button onClick={()=>updateStock(i.id, -1)} className="font-bold text-red-500 hover:scale-125">-</button>
+                                                    <span className={`text-[10px] font-black w-4 text-center ${(!i.stock || i.stock===0)?'text-red-500':''}`}>{i.stock||0}</span>
+                                                    <button onClick={()=>updateStock(i.id, 1)} className="font-bold text-blue-500 hover:scale-125">+</button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
-
-                    {adminTab === 'accounting' && (
-                        <div className="space-y-8 animate-in fade-in">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg">
-                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos</p>
-                                    <h2 className="text-3xl font-black">${totalIncome.toLocaleString()}</h2>
-                                </div>
-                                <div className="bg-red-500 text-white p-6 rounded-2xl shadow-lg">
-                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos</p>
-                                    <h2 className="text-3xl font-black">${totalExpenses.toLocaleString()}</h2>
-                                </div>
-                                <div className={`${netProfit >= 0 ? 'bg-blue-600' : 'bg-orange-500'} text-white p-6 rounded-2xl shadow-lg`}>
-                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Utilidad Neta</p>
-                                    <h2 className="text-3xl font-black">${netProfit.toLocaleString()}</h2>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div className="admin-card space-y-4">
-                                    <h3 className="font-bold text-red-500 uppercase text-xs">Registrar Gasto</h3>
-                                    <input placeholder="Concepto (Luz, Arriendo, Repuestos)" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} />
-                                    <div className="flex gap-2">
-                                        <input placeholder="Monto" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} />
-                                        <input type="date" className="w-32 p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.date} onChange={e=>setNewExpense({...newExpense, date:e.target.value})} />
-                                    </div>
-                                    <button onClick={()=>{if(newExpense.concept && newExpense.amount){setExpenses([{id:Date.now(), ...newExpense}, ...expenses]); setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});}}} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs">Registrar Egreso</button>
-                                </div>
-                                <div className="admin-card overflow-y-auto max-h-[300px]">
-                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Últimos Gastos</h3>
-                                    {expenses.map(e => (
-                                        <div key={e.id} className="flex justify-between items-center border-b py-2 hover:bg-slate-50 px-2">
-                                            <div><p className="text-[10px] font-bold text-slate-400">{e.date}</p><p className="text-xs font-bold uppercase">{e.concept}</p></div>
-                                            <div className="text-right"><p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p><button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="admin-card h-[300px]"><canvas ref={chartRef}></canvas></div>
-                        </div>
-                    )}
-
-                    {adminTab === 'reports' && (
-                        <div className="space-y-6 animate-in fade-in">
-                            <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap">
-                                <span className="text-[10px] font-bold uppercase opacity-40">Filtros:</span>
-                                <input placeholder="Año (2025)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} />
-                                <input placeholder="Mes (01-12)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} />
-                                <input placeholder="Día (01-31)" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} />
-                                <button onClick={() => setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 px-3 py-2 rounded font-bold text-[10px] text-slate-500 hover:bg-slate-200">Limpiar</button>
-                                <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR REPORTE PDF</button>
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="admin-card lg:col-span-2 h-[350px]"><canvas ref={chartRef}></canvas></div>
-                                <div className="admin-card overflow-y-auto max-h-[400px]">
-                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Ventas</h3>
-                                    {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => (
-                                        <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between hover:bg-slate-50 px-1">
-                                            <span>{s.date} - {s.concept}</span>
-                                            <b className="text-emerald-600">${s.amount.toLocaleString()}</b>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {adminTab === 'config' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
-                            <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados</h3>
-                                <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
-                                <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
-                                <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
-                                <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div>
-                            </div>
-                            <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos</h3>
-                                <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} />
-                                <input placeholder="Email Público" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
-                                <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
-                                <textarea placeholder="Footer Text" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
-                                <div className="grid grid-cols-3 gap-2 border-t pt-2">
-                                    <input placeholder="FB Link" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
-                                    <input placeholder="IG Link" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
-                                    <input placeholder="TK Link" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
-                                </div>
-                                <div className="pt-2 border-t">
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel (Clic X para borrar):</label>
-                                    <div className="flex gap-2 mb-2 overflow-x-auto pb-2 min-h-[50px]">
-                                        {settings.bgImages?.map((img, i) => (
-                                            <div key={i} className="relative group flex-shrink-0">
-                                                <img src={img} className="w-16 h-12 object-cover rounded border" />
-                                                <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-[10px] flex items-center justify-center shadow-lg hover:scale-110 transition z-10 border-2 border-white">X</button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" />
-                                    <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" />
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {/* (DEMÁS TABS IGUALES) */}
+                    {adminTab === 'accounting' && ( <div className="space-y-8 animate-in fade-in"> <div className="grid grid-cols-1 md:grid-cols-3 gap-6"> <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg"> <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos</p> <h2 className="text-3xl font-black">${totalIncome.toLocaleString()}</h2> </div> <div className="bg-red-500 text-white p-6 rounded-2xl shadow-lg"> <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos</p> <h2 className="text-3xl font-black">${totalExpenses.toLocaleString()}</h2> </div> <div className={`${netProfit >= 0 ? 'bg-blue-600' : 'bg-orange-500'} text-white p-6 rounded-2xl shadow-lg`}> <p className="text-xs font-bold uppercase opacity-80 mb-1">Utilidad Neta</p> <h2 className="text-3xl font-black">${netProfit.toLocaleString()}</h2> </div> </div> <div className="grid grid-cols-1 md:grid-cols-2 gap-8"> <div className="admin-card space-y-4"> <h3 className="font-bold text-red-500 uppercase text-xs">Registrar Gasto</h3> <input placeholder="Concepto" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} /> <div className="flex gap-2"> <input placeholder="Monto" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} /> <input type="date" className="w-32 p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.date} onChange={e=>setNewExpense({...newExpense, date:e.target.value})} /> </div> <button onClick={()=>{if(newExpense.concept && newExpense.amount){setExpenses([{id:Date.now(), ...newExpense}, ...expenses]); setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});}}} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs">Registrar Egreso</button> </div> <div className="admin-card overflow-y-auto max-h-[300px]"> <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Últimos Gastos</h3> {expenses.map(e => ( <div key={e.id} className="flex justify-between items-center border-b py-2 hover:bg-slate-50 px-2"> <div><p className="text-[10px] font-bold text-slate-400">{e.date}</p><p className="text-xs font-bold uppercase">{e.concept}</p></div> <div className="text-right"><p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p><button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button></div> </div> ))} </div> </div> <div className="admin-card h-[300px]"><canvas ref={chartRef}></canvas></div> </div> )} {adminTab === 'reports' && ( <div className="space-y-6 animate-in fade-in"> <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap"> <span className="text-[10px] font-bold uppercase opacity-40">Filtros:</span> <input placeholder="Año" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} /> <input placeholder="Mes" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} /> <input placeholder="Día" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} /> <button onClick={() => setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 px-3 py-2 rounded font-bold text-[10px] text-slate-500 hover:bg-slate-200">Limpiar</button> <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR REPORTE PDF</button> </div> <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"> <div className="admin-card lg:col-span-2 h-[350px]"><canvas ref={chartRef}></canvas></div> <div className="admin-card overflow-y-auto max-h-[400px]"> <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Ventas</h3> {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => ( <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between hover:bg-slate-50 px-1"> <span>{s.date} - {s.concept}</span> <b className="text-emerald-600">${s.amount.toLocaleString()}</b> </div> ))} </div> </div> </div> )} {adminTab === 'config' && ( <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in"> <div className="admin-card space-y-4"> <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados</h3> <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} /> <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} /> <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} /> <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div> </div> <div className="admin-card space-y-4"> <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos</h3> <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} /> <input placeholder="Email Público" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} /> <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} /> <textarea placeholder="Footer Text" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} /> <div className="grid grid-cols-3 gap-2 border-t pt-2"> <input placeholder="FB" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} /> <input placeholder="IG" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} /> <input placeholder="TK" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} /> </div> <div className="pt-2 border-t"> <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel:</label> <div className="flex gap-2 mb-2 overflow-x-auto pb-2 min-h-[50px]"> {settings.bgImages?.map((img, i) => ( <div key={i} className="relative group flex-shrink-0"> <img src={img} className="w-16 h-12 object-cover rounded border" /> <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-[10px] flex items-center justify-center shadow-lg hover:scale-110 transition z-10 border-2 border-white">X</button> </div> ))} </div> <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" /> <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" /> </div> </div> </div> )}
                 </div>
             );
         }
