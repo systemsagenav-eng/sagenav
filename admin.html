@@ -106,17 +106,14 @@
                 });
             };
 
-            // CORRECCIÓN IMPORTANTE AQUÍ: Usamos 'prev' para no perder datos al subir imagen
             const handleFile = async (e, type) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const base64 = await compressImage(file);
-                
                 if (type === 'prod') setNewItem(prev => ({...prev, img: base64}));
                 if (type === 'logo') setSettings(prev => ({...prev, personalLogo: base64}));
                 if (type === 'navLogo') setSettings(prev => ({...prev, navLogo: base64}));
                 if (type === 'bg') setSettings(prev => ({...prev, bgImages: [...(prev.bgImages || []), base64]}));
-                
                 alert("Imagen lista.");
             };
 
@@ -132,9 +129,8 @@
                     const { error } = await supabaseClient.from('sagenav_data').upsert({ key: up.key, value: up.value });
                     if(error) err = true;
                 }
-                if (!err) {
-                     if(!overrideInventory) alert("✅ NUBE SINCRONIZADA"); 
-                } else alert("❌ Error de conexión");
+                if (!err) { if(!overrideInventory) alert("✅ NUBE SINCRONIZADA"); } 
+                else alert("❌ Error de conexión");
             };
 
             const updateStock = (id, delta) => {
@@ -148,9 +144,30 @@
                 setInventory(updatedInv);
             };
 
+            // --- NUEVA FUNCIÓN: Agregar Item Manual a la Lista ---
+            const addManualToBill = () => {
+                if (manualItem.desc && manualItem.price) {
+                    const newItem = {
+                        id: 'manual_' + Date.now(), // ID único para que no choque con inventario
+                        name: manualItem.desc,
+                        price: parseInt(manualItem.price),
+                        isManual: true 
+                    };
+                    setBillItems([...billItems, newItem]);
+                    setManualItem({ desc: "", price: "" }); // Limpiar campos
+                } else {
+                    alert("Escribe descripción y precio antes de agregar.");
+                }
+            };
+
             const generateInvoicePDF = () => {
+                // 1. DESCONTAR INVENTARIO (Solo items reales, no manuales)
                 const soldCounts = {};
-                billItems.forEach(item => { soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; });
+                billItems.forEach(item => { 
+                    if (!item.isManual) { // Solo contar items de inventario
+                        soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; 
+                    }
+                });
 
                 const updatedInventory = inventory.map(item => {
                     if (soldCounts[item.id]) {
@@ -161,6 +178,7 @@
                     return item;
                 });
 
+                // 2. GENERAR PDF
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
@@ -172,19 +190,21 @@
                 doc.text(`NIT/CC: ${billClient.nit}`, 15, 70);
                 doc.text(`FECHA: ${billClient.date}`, 160, 65);
                 
+                // Mapeamos TODOS los items de la lista (Inventario + Manuales)
                 const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
-                if (manualItem.desc) tableBody.push([1, manualItem.desc.toUpperCase(), `$${parseInt(manualItem.price || 0).toLocaleString()}`, `$${parseInt(manualItem.price || 0).toLocaleString()}`]);
+                
                 doc.autoTable({ startY: 80, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody });
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, doc.lastAutoTable.finalY + 10);
                 doc.save(`CTA_${billClient.name}.pdf`);
                 
+                // 3. GUARDAR CAMBIOS
                 const newSales = [{ id: Date.now(), date: billClient.date, amount: total, concept: billClient.name }, ...sales];
                 setInventory(updatedInventory);
                 setSales(newSales);
                 
                 saveEverything(updatedInventory, newSales); 
-                alert("✅ Venta registrada y Stock descontado automáticamente.");
+                alert("✅ PDF Generado. (Inventario actualizado si hubo productos)");
                 setBillItems([]);
                 setManualItem({ desc: "", price: "" });
             };
@@ -259,20 +279,39 @@
                                     <option value="">+ Añadir ítem (Solo con Stock > 0)</option>
                                     {inventory.filter(i => (i.stock > 0 || i.onDemand)).map(i=><option key={i.id} value={i.id}>{i.name} (${i.price.toLocaleString()}) - Stock: {i.onDemand ? 'Encargo' : i.stock}</option>)}
                                 </select>
-                                <div className="flex gap-2"><input placeholder="Manual..." className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} /><input placeholder="$" type="number" className="w-24 p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} /></div>
+                                <div className="flex gap-2">
+                                    <input placeholder="Manual (Ej: Domicilio)" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.desc} onChange={e=>setManualItem({...manualItem, desc:e.target.value})} />
+                                    <input placeholder="$" type="number" className="w-24 p-3 border rounded-xl text-xs bg-slate-50" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} />
+                                    <button onClick={addManualToBill} className="bg-emerald-500 text-white px-4 rounded-xl font-bold hover:bg-emerald-600">+</button>
+                                </div>
                                 <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2"><i data-lucide="file-text"></i> GENERAR PDF & DESCONTAR</button>
                             </div>
                             <div className="admin-card flex flex-col h-full min-h-[300px]">
                                 <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Detalle</h3>
                                 <div className="flex-grow space-y-2 overflow-y-auto max-h-[300px]">
-                                    {billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs uppercase font-bold">{it.name} <b>${it.price.toLocaleString()}</b><button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 px-2 rounded">x</button></div>))}
-                                    {manualItem.desc && <div className="flex justify-between border-b py-2 text-xs uppercase font-bold text-blue-600">{manualItem.desc} <b>${parseInt(manualItem.price||0).toLocaleString()}</b></div>}
+                                    {billItems.length === 0 && <p className="text-center opacity-30 text-xs mt-10">Agrega productos o ítems manuales...</p>}
+                                    {billItems.map((it, idx)=>(
+                                        <div key={idx} className="flex justify-between border-b py-2 text-xs uppercase font-bold">
+                                            <span>
+                                                {it.name} 
+                                                {it.isManual && <span className="ml-2 text-[9px] text-emerald-600 bg-emerald-50 px-1 rounded">MANUAL</span>}
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <b>${it.price.toLocaleString()}</b>
+                                                <button onClick={()=>setBillItems(billItems.filter((_,i)=>i!==idx))} className="text-red-500 hover:bg-red-50 px-2 rounded">x</button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase"><span>Total:</span><span className="text-emerald-600">${(billItems.reduce((a,b)=>a+b.price,0) + parseInt(manualItem.price||0)).toLocaleString()}</span></div>
+                                <div className="mt-auto pt-4 border-t-2 border-dashed flex justify-between font-tech font-black text-xl italic uppercase">
+                                    <span>Total:</span>
+                                    <span className="text-emerald-600">${billItems.reduce((a,b)=>a+b.price,0).toLocaleString()}</span>
+                                </div>
                             </div>
                         </div>
                     )}
 
+                    {/* LAS DEMÁS PESTAÑAS SIGUEN IGUAL */}
                     {adminTab === 'inventory' && (
                         <div className="admin-card animate-in fade-in">
                              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
