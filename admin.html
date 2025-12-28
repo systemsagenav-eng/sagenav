@@ -49,7 +49,7 @@
                 bgImages: [], personalLogo: null, navLogo: null
             });
             const [inventory, setInventory] = useState([]);
-            const [sales, setSales] = useState([]);
+            const [sales, setSales] = useState([]); // sales ahora tendrá 'productCost'
             const [expenses, setExpenses] = useState([]);
 
             // FORMULARIOS
@@ -149,7 +149,8 @@
                         id: 'manual_' + Date.now(),
                         name: manualItem.desc,
                         price: parseInt(manualItem.price),
-                        isManual: true 
+                        isManual: true,
+                        cost: 0 // Servicios manuales no tienen costo de mercancía usualmente
                     };
                     setBillItems([...billItems, newItem]);
                     setManualItem({ desc: "", price: "" }); 
@@ -157,9 +158,18 @@
             };
 
             const generateInvoicePDF = () => {
-                // 1. Descontar Inventario
                 const soldCounts = {};
-                billItems.forEach(item => { if (!item.isManual) soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; });
+                
+                // CALCULAR COSTO DE LA MERCANCÍA VENDIDA
+                let totalCostOfGoods = 0;
+                
+                billItems.forEach(item => { 
+                    if (!item.isManual) {
+                        soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; 
+                        // Sumamos el costo de este item (si existe)
+                        totalCostOfGoods += (parseInt(item.cost) || 0);
+                    }
+                });
 
                 const updatedInventory = inventory.map(item => {
                     if (soldCounts[item.id]) {
@@ -170,7 +180,7 @@
                     return item;
                 });
 
-                // 2. GENERAR PDF
+                // PDF GENERATION
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
@@ -188,10 +198,8 @@
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 let finalY = doc.lastAutoTable.finalY + 10;
                 
-                // --- LÓGICA DE ABONOS Y CONTABILIDAD REAL ---
                 const abono = parseInt(billDeposit) || 0;
                 const saldo = total - abono;
-                // Si hay abono, SOLO registramos el abono como venta hoy. Si no, todo el total.
                 const amountToRegister = abono > 0 ? abono : total; 
 
                 if (abono > 0 && abono < total) {
@@ -220,13 +228,21 @@
 
                 doc.save(`CTA_${billClient.name}.pdf`);
                 
-                // 3. Guardar Venta (CON LA CANTIDAD REAL RECIBIDA)
-                const newSales = [{ id: Date.now(), date: billClient.date, amount: amountToRegister, concept: billClient.name + (abono > 0 ? " (Abono)" : "") }, ...sales];
+                // GUARDAR VENTA CON EL COSTO ASOCIADO
+                // Si es abono, asumimos que el costo del producto sale del inventario HOY, así que lo registramos completo para no perder el rastro.
+                const newSales = [{ 
+                    id: Date.now(), 
+                    date: billClient.date, 
+                    amount: amountToRegister, 
+                    productCost: totalCostOfGoods, // AQUI ESTA LA MAGIA
+                    concept: billClient.name + (abono > 0 ? " (Abono)" : "") 
+                }, ...sales];
+
                 setInventory(updatedInventory);
                 setSales(newSales);
                 saveEverything(updatedInventory, newSales); 
                 
-                alert(`✅ PDF Generado.\n💰 Ingreso registrado en caja: $${amountToRegister.toLocaleString()}`);
+                alert(`✅ Venta y Costos Registrados.`);
                 
                 setBillItems([]);
                 setManualItem({ desc: "", price: "" });
@@ -274,9 +290,13 @@
             );
 
             if (loading) return <div className="h-screen flex items-center justify-center font-tech uppercase animate-pulse">Conectando...</div>;
+            
+            // --- CÁLCULOS CONTABLES NUEVOS ---
             const totalIncome = sales.reduce((sum, item) => sum + (item.amount || 0), 0);
-            const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
-            const netProfit = totalIncome - totalExpenses;
+            const totalProductCosts = sales.reduce((sum, item) => sum + (item.productCost || 0), 0); // Costo Mercancia
+            const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0); // Gastos Operativos
+            const grossProfit = totalIncome - totalProductCosts; // Ganancia Bruta (Solo producto)
+            const netProfit = grossProfit - totalExpenses; // Ganancia Final (Real)
 
             return (
                 <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
@@ -391,8 +411,52 @@
                         </div>
                     )}
                     
-                    {/* DEMÁS TABS IGUALES */}
-                    {adminTab === 'accounting' && ( <div className="space-y-8 animate-in fade-in"> <div className="grid grid-cols-1 md:grid-cols-3 gap-6"> <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg"> <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos</p> <h2 className="text-3xl font-black">${totalIncome.toLocaleString()}</h2> </div> <div className="bg-red-500 text-white p-6 rounded-2xl shadow-lg"> <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos</p> <h2 className="text-3xl font-black">${totalExpenses.toLocaleString()}</h2> </div> <div className={`${netProfit >= 0 ? 'bg-blue-600' : 'bg-orange-500'} text-white p-6 rounded-2xl shadow-lg`}> <p className="text-xs font-bold uppercase opacity-80 mb-1">Utilidad Neta</p> <h2 className="text-3xl font-black">${netProfit.toLocaleString()}</h2> </div> </div> <div className="grid grid-cols-1 md:grid-cols-2 gap-8"> <div className="admin-card space-y-4"> <h3 className="font-bold text-red-500 uppercase text-xs">Registrar Gasto</h3> <input placeholder="Concepto" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} /> <div className="flex gap-2"> <input placeholder="Monto" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} /> <input type="date" className="w-32 p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.date} onChange={e=>setNewExpense({...newExpense, date:e.target.value})} /> </div> <button onClick={()=>{if(newExpense.concept && newExpense.amount){setExpenses([{id:Date.now(), ...newExpense}, ...expenses]); setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});}}} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs">Registrar Egreso</button> </div> <div className="admin-card overflow-y-auto max-h-[300px]"> <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Últimos Gastos</h3> {expenses.map(e => ( <div key={e.id} className="flex justify-between items-center border-b py-2 hover:bg-slate-50 px-2"> <div><p className="text-[10px] font-bold text-slate-400">{e.date}</p><p className="text-xs font-bold uppercase">{e.concept}</p></div> <div className="text-right"><p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p><button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button></div> </div> ))} </div> </div> <div className="admin-card h-[300px]"><canvas ref={chartRef}></canvas></div> </div> )} {adminTab === 'reports' && ( <div className="space-y-6 animate-in fade-in"> <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap"> <span className="text-[10px] font-bold uppercase opacity-40">Filtros:</span> <input placeholder="Año" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} /> <input placeholder="Mes" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} /> <input placeholder="Día" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} /> <button onClick={() => setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 px-3 py-2 rounded font-bold text-[10px] text-slate-500 hover:bg-slate-200">Limpiar</button> <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR REPORTE PDF</button> </div> <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"> <div className="admin-card lg:col-span-2 h-[350px]"><canvas ref={chartRef}></canvas></div> <div className="admin-card overflow-y-auto max-h-[400px]"> <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Ventas</h3> {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => ( <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between hover:bg-slate-50 px-1"> <span>{s.date} - {s.concept}</span> <b className="text-emerald-600">${s.amount.toLocaleString()}</b> </div> ))} </div> </div> </div> )} {adminTab === 'config' && ( <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in"> <div className="admin-card space-y-4"> <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados</h3> <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} /> <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} /> <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} /> <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div> </div> <div className="admin-card space-y-4"> <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos</h3> <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} /> <input placeholder="Email Público" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} /> <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} /> <textarea placeholder="Footer Text" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} /> <div className="grid grid-cols-3 gap-2 border-t pt-2"> <input placeholder="FB" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} /> <input placeholder="IG" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} /> <input placeholder="TK" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} /> </div> <div className="pt-2 border-t"> <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel:</label> <div className="flex gap-2 mb-2 overflow-x-auto pb-2 min-h-[50px]"> {settings.bgImages?.map((img, i) => ( <div key={i} className="relative group flex-shrink-0"> <img src={img} className="w-16 h-12 object-cover rounded border" /> <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-[10px] flex items-center justify-center shadow-lg hover:scale-110 transition z-10 border-2 border-white">X</button> </div> ))} </div> <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" /> <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" /> </div> </div> </div> )}
+                    {adminTab === 'accounting' && ( 
+                        <div className="space-y-8 animate-in fade-in"> 
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
+                                <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg"> 
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Ingresos Totales</p> 
+                                    <h2 className="text-2xl font-black">${totalIncome.toLocaleString()}</h2> 
+                                </div> 
+                                <div className="bg-orange-400 text-white p-6 rounded-2xl shadow-lg"> 
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Costo Mercancía</p> 
+                                    <h2 className="text-2xl font-black">-${totalProductCosts.toLocaleString()}</h2> 
+                                </div>
+                                <div className="bg-red-500 text-white p-6 rounded-2xl shadow-lg"> 
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">Gastos Operativos</p> 
+                                    <h2 className="text-2xl font-black">-${totalExpenses.toLocaleString()}</h2> 
+                                </div> 
+                                <div className={`${netProfit >= 0 ? 'bg-blue-600' : 'bg-orange-700'} text-white p-6 rounded-2xl shadow-lg border-2 border-white`}> 
+                                    <p className="text-xs font-bold uppercase opacity-80 mb-1">UTILIDAD REAL</p> 
+                                    <h2 className="text-2xl font-black">${netProfit.toLocaleString()}</h2> 
+                                </div> 
+                            </div> 
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8"> 
+                                <div className="admin-card space-y-4"> 
+                                    <h3 className="font-bold text-red-500 uppercase text-xs">Registrar Gasto (Arriendo, Luz, etc.)</h3> 
+                                    <input placeholder="Concepto" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} /> 
+                                    <div className="flex gap-2"> 
+                                        <input placeholder="Monto" type="number" className="flex-grow p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} /> 
+                                        <input type="date" className="w-32 p-3 border rounded-xl text-xs bg-slate-50" value={newExpense.date} onChange={e=>setNewExpense({...newExpense, date:e.target.value})} /> 
+                                    </div> 
+                                    <button onClick={()=>{if(newExpense.concept && newExpense.amount){setExpenses([{id:Date.now(), ...newExpense}, ...expenses]); setNewExpense({concept:"", amount:"", date: new Date().toISOString().split('T')[0]});}}} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold uppercase text-xs">Registrar Egreso</button> 
+                                </div> 
+                                <div className="admin-card overflow-y-auto max-h-[300px]"> 
+                                    <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Historial de Gastos</h3> 
+                                    {expenses.map(e => ( 
+                                        <div key={e.id} className="flex justify-between items-center border-b py-2 hover:bg-slate-50 px-2"> 
+                                            <div><p className="text-[10px] font-bold text-slate-400">{e.date}</p><p className="text-xs font-bold uppercase">{e.concept}</p></div> 
+                                            <div className="text-right"><p className="text-red-500 font-black text-xs">-${e.amount.toLocaleString()}</p><button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))} className="text-[9px] text-red-300 underline">Borrar</button></div> 
+                                        </div> 
+                                    ))} 
+                                </div> 
+                            </div> 
+                            <div className="admin-card h-[300px]"><canvas ref={chartRef}></canvas></div> 
+                        </div> 
+                    )} 
+                    
+                    {adminTab === 'reports' && ( <div className="space-y-6 animate-in fade-in"> <div className="flex gap-4 bg-white p-4 rounded-2xl border items-center flex-wrap"> <span className="text-[10px] font-bold uppercase opacity-40">Filtros:</span> <input placeholder="Año" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.year} onChange={e=>setReportFilter({...reportFilter, year:e.target.value})} /> <input placeholder="Mes" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.month} onChange={e=>setReportFilter({...reportFilter, month:e.target.value})} /> <input placeholder="Día" className="p-2 border rounded-lg text-xs w-24" value={reportFilter.day} onChange={e=>setReportFilter({...reportFilter, day:e.target.value})} /> <button onClick={() => setReportFilter({day:"", month:"", year:new Date().getFullYear().toString()})} className="bg-slate-100 px-3 py-2 rounded font-bold text-[10px] text-slate-500 hover:bg-slate-200">Limpiar</button> <button onClick={generateReportPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-[10px] ml-auto">DESCARGAR REPORTE PDF</button> </div> <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"> <div className="admin-card lg:col-span-2 h-[350px]"><canvas ref={chartRef}></canvas></div> <div className="admin-card overflow-y-auto max-h-[400px]"> <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Ventas</h3> {sales.filter(s => s.date.includes(reportFilter.year) && s.date.includes(reportFilter.month) && s.date.includes(reportFilter.day)).map(s => ( <div key={s.id} className="border-b py-2 text-[10px] font-bold uppercase flex justify-between hover:bg-slate-50 px-1"> <span>{s.date} - {s.concept}</span> <b className="text-emerald-600">${s.amount.toLocaleString()}</b> </div> ))} </div> </div> </div> )} {adminTab === 'config' && ( <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in"> <div className="admin-card space-y-4"> <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Privados</h3> <input placeholder="Nombre" className="w-full p-3 border rounded-xl text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} /> <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-red-50" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} /> <input placeholder="Dirección" className="w-full p-3 border rounded-xl text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} /> <div className="pt-2"><label className="text-[10px] font-bold uppercase opacity-50">Logo PDF:</label><input type="file" onChange={e=>handleFile(e, 'logo')} className="text-xs" /></div> </div> <div className="admin-card space-y-4"> <h3 className="font-bold text-blue-600 uppercase text-xs">Datos Públicos</h3> <input placeholder="Eslogan" className="w-full p-3 border rounded-xl text-xs" value={settings.commercialDesc} onChange={e=>setSettings({...settings, commercialDesc:e.target.value})} /> <input placeholder="Email Público" className="w-full p-3 border rounded-xl text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} /> <input placeholder="WhatsApp" className="w-full p-3 border rounded-xl text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} /> <textarea placeholder="Footer Text" className="w-full p-3 border rounded-xl h-20 text-xs" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} /> <div className="grid grid-cols-3 gap-2 border-t pt-2"> <input placeholder="FB" className="p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} /> <input placeholder="IG" className="p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} /> <input placeholder="TK" className="p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} /> </div> <div className="pt-2 border-t"> <label className="text-[10px] font-bold uppercase opacity-50 block mb-2">Carrusel:</label> <div className="flex gap-2 mb-2 overflow-x-auto pb-2 min-h-[50px]"> {settings.bgImages?.map((img, i) => ( <div key={i} className="relative group flex-shrink-0"> <img src={img} className="w-16 h-12 object-cover rounded border" /> <button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-[10px] flex items-center justify-center shadow-lg hover:scale-110 transition z-10 border-2 border-white">X</button> </div> ))} </div> <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-xs w-full" /> <label className="text-[10px] font-bold uppercase opacity-50 block mt-2">Logo Web:</label><input type="file" onChange={e=>handleFile(e, 'navLogo')} className="text-xs w-full" /> </div> </div> </div> )}
                 </div>
             );
         }
