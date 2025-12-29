@@ -49,7 +49,7 @@
                 bgImages: [], personalLogo: null, navLogo: null
             });
             const [inventory, setInventory] = useState([]);
-            const [sales, setSales] = useState([]); // sales ahora tendrá 'productCost'
+            const [sales, setSales] = useState([]);
             const [expenses, setExpenses] = useState([]);
 
             // FORMULARIOS
@@ -150,29 +150,32 @@
                         name: manualItem.desc,
                         price: parseInt(manualItem.price),
                         isManual: true,
-                        cost: 0 // Servicios manuales no tienen costo de mercancía usualmente
+                        cost: 0 
                     };
                     setBillItems([...billItems, newItem]);
                     setManualItem({ desc: "", price: "" }); 
                 } else { alert("Por favor escribe una descripción y un precio."); }
             };
 
-            const generateInvoicePDF = () => {
+            // --- FUNCIÓN UNIFICADA PARA DOCUMENTOS (COTIZACIÓN O VENTA) ---
+            const generateDocument = (isQuote) => {
+                if (billItems.length === 0) { alert("Agrega al menos un ítem."); return; }
+
+                // 1. Cálculos de Inventario y Costos (Solo si NO es cotización)
                 const soldCounts = {};
-                
-                // CALCULAR COSTO DE LA MERCANCÍA VENDIDA
                 let totalCostOfGoods = 0;
                 
-                billItems.forEach(item => { 
-                    if (!item.isManual) {
-                        soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; 
-                        // Sumamos el costo de este item (si existe)
-                        totalCostOfGoods += (parseInt(item.cost) || 0);
-                    }
-                });
+                if (!isQuote) {
+                    billItems.forEach(item => { 
+                        if (!item.isManual) {
+                            soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; 
+                            totalCostOfGoods += (parseInt(item.cost) || 0);
+                        }
+                    });
+                }
 
                 const updatedInventory = inventory.map(item => {
-                    if (soldCounts[item.id]) {
+                    if (!isQuote && soldCounts[item.id]) {
                         let newStock = (item.stock || 0) - soldCounts[item.id];
                         if (newStock < 0) newStock = 0;
                         return { ...item, stock: newStock };
@@ -180,29 +183,40 @@
                     return item;
                 });
 
-                // PDF GENERATION
+                // 2. GENERACIÓN PDF
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
+                
+                // Header
                 if (settings.personalLogo) doc.addImage(settings.personalLogo, 'JPEG', 15, 10, 25, 25);
                 doc.setFont("helvetica", "bold").setFontSize(14).text(settings.personalName || "SAGENAV", 45, 20);
                 doc.setFontSize(8).setFont("helvetica", "normal").text(`NIT/CC: ${settings.personalId || ''} | ${settings.personalAddress || ''}`, 45, 26);
                 doc.text(`Email: ${settings.publicEmail || ''} | Tel: ${settings.whatsapp || ''}`, 45, 31);
-                doc.setFontSize(18).setFont("helvetica", "bold").text("CUENTA DE COBRO", 105, 50, { align: "center" });
+                
+                // Título Dinámico
+                const docTitle = isQuote ? "COTIZACIÓN" : "CUENTA DE COBRO";
+                const filePrefix = isQuote ? "COT_" : "CTA_";
+                
+                doc.setFontSize(18).setFont("helvetica", "bold").text(docTitle, 105, 50, { align: "center" });
+                
+                // Info Cliente
                 doc.setFontSize(10).text(`CLIENTE: ${billClient.name.toUpperCase()}`, 15, 65);
                 doc.text(`NIT/CC: ${billClient.nit}`, 15, 70);
                 doc.text(`FECHA: ${billClient.date}`, 160, 65);
                 
+                // Tabla
                 const tableBody = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
                 doc.autoTable({ startY: 80, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: tableBody });
                 
                 const total = tableBody.reduce((acc, curr) => acc + parseInt(curr[3].replace(/[^0-9]/g, '') || 0), 0);
                 let finalY = doc.lastAutoTable.finalY + 10;
                 
+                // Lógica de Saldos (Solo para Ventas reales, no Cotizaciones)
                 const abono = parseInt(billDeposit) || 0;
                 const saldo = total - abono;
                 const amountToRegister = abono > 0 ? abono : total; 
 
-                if (abono > 0 && abono < total) {
+                if (!isQuote && abono > 0 && abono < total) {
                     doc.setFont("helvetica", "bold");
                     doc.text(`VALOR TOTAL: $${total.toLocaleString()}`, 15, finalY);
                     finalY += 7;
@@ -215,9 +229,11 @@
                     doc.setTextColor(0, 0, 0);
                     doc.setFontSize(10);
                 } else {
-                    doc.setFont("helvetica", "bold").text(`TOTAL PAGADO: $${total.toLocaleString()}`, 15, finalY);
+                    // En cotización o pago total
+                    doc.setFont("helvetica", "bold").text(`TOTAL: $${total.toLocaleString()}`, 15, finalY);
                 }
 
+                // Observaciones
                 if (billObs) {
                     finalY += 15;
                     doc.setFontSize(9).setFont("helvetica", "bold").text("OBSERVACIONES / GARANTÍA:", 15, finalY);
@@ -226,24 +242,27 @@
                     doc.text(splitText, 15, finalY + 5);
                 }
 
-                doc.save(`CTA_${billClient.name}.pdf`);
+                doc.save(`${filePrefix}${billClient.name}.pdf`);
                 
-                // GUARDAR VENTA CON EL COSTO ASOCIADO
-                // Si es abono, asumimos que el costo del producto sale del inventario HOY, así que lo registramos completo para no perder el rastro.
-                const newSales = [{ 
-                    id: Date.now(), 
-                    date: billClient.date, 
-                    amount: amountToRegister, 
-                    productCost: totalCostOfGoods, // AQUI ESTA LA MAGIA
-                    concept: billClient.name + (abono > 0 ? " (Abono)" : "") 
-                }, ...sales];
+                // 3. GUARDAR DATOS (Solo si es Venta, NO si es Cotización)
+                if (!isQuote) {
+                    const newSales = [{ 
+                        id: Date.now(), 
+                        date: billClient.date, 
+                        amount: amountToRegister, 
+                        productCost: totalCostOfGoods,
+                        concept: billClient.name + (abono > 0 ? " (Abono)" : "") 
+                    }, ...sales];
 
-                setInventory(updatedInventory);
-                setSales(newSales);
-                saveEverything(updatedInventory, newSales); 
+                    setInventory(updatedInventory);
+                    setSales(newSales);
+                    saveEverything(updatedInventory, newSales); 
+                    alert(`✅ Venta Registrada.\n💰 Ingreso: $${amountToRegister.toLocaleString()}`);
+                } else {
+                    alert("📄 Cotización generada.\n(No afecta inventario ni caja)");
+                }
                 
-                alert(`✅ Venta y Costos Registrados.`);
-                
+                // Limpiar formulario
                 setBillItems([]);
                 setManualItem({ desc: "", price: "" });
                 setBillObs("");
@@ -291,12 +310,11 @@
 
             if (loading) return <div className="h-screen flex items-center justify-center font-tech uppercase animate-pulse">Conectando...</div>;
             
-            // --- CÁLCULOS CONTABLES NUEVOS ---
             const totalIncome = sales.reduce((sum, item) => sum + (item.amount || 0), 0);
-            const totalProductCosts = sales.reduce((sum, item) => sum + (item.productCost || 0), 0); // Costo Mercancia
-            const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0); // Gastos Operativos
-            const grossProfit = totalIncome - totalProductCosts; // Ganancia Bruta (Solo producto)
-            const netProfit = grossProfit - totalExpenses; // Ganancia Final (Real)
+            const totalProductCosts = sales.reduce((sum, item) => sum + (item.productCost || 0), 0);
+            const totalExpenses = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
+            const grossProfit = totalIncome - totalProductCosts;
+            const netProfit = grossProfit - totalExpenses;
 
             return (
                 <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
@@ -316,7 +334,7 @@
                     {adminTab === 'billing' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                             <div className="admin-card space-y-4">
-                                <h3 className="font-bold text-blue-600 uppercase text-xs">Nueva Factura / Cuenta de Cobro</h3>
+                                <h3 className="font-bold text-blue-600 uppercase text-xs">Nueva Transacción</h3>
                                 <input placeholder="Cliente" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
                                 <input placeholder="NIT/CC" className="w-full p-3 border rounded-xl text-xs bg-slate-50" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
                                 <input type="date" className="w-full p-3 border rounded-xl text-xs bg-slate-50 font-bold" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
@@ -334,13 +352,21 @@
                                     <button onClick={addManualToBill} className="bg-emerald-500 text-white px-4 rounded-xl font-bold hover:bg-emerald-600 shadow-lg text-xl" title="Agregar concepto">+</button>
                                 </div>
                                 
-                                <label className="text-[10px] font-bold text-slate-400 uppercase mt-4 block">3. Abono / Pago Parcial</label>
-                                <input placeholder="$ (Deja vacío si pagan todo el total)" type="number" className="w-full p-3 border border-orange-200 rounded-xl text-xs bg-orange-50 font-bold text-orange-700" value={billDeposit} onChange={e=>setBillDeposit(e.target.value)} />
+                                <label className="text-[10px] font-bold text-slate-400 uppercase mt-4 block">3. Abono (Solo para Ventas)</label>
+                                <input placeholder="$ (Deja vacío si pagan todo)" type="number" className="w-full p-3 border border-orange-200 rounded-xl text-xs bg-orange-50 font-bold text-orange-700" value={billDeposit} onChange={e=>setBillDeposit(e.target.value)} />
 
-                                <label className="text-[10px] font-bold text-slate-400 uppercase mt-4 block">4. Observaciones / Garantía</label>
-                                <textarea placeholder="Ej: Equipo probado. Garantía 3 meses por hardware. Se recomienda limpieza..." className="w-full p-3 border rounded-xl text-xs bg-slate-50 h-24 resize-none" value={billObs} onChange={e=>setBillObs(e.target.value)} />
+                                <label className="text-[10px] font-bold text-slate-400 uppercase mt-4 block">4. Observaciones</label>
+                                <textarea placeholder="Ej: Equipo probado. Garantía..." className="w-full p-3 border rounded-xl text-xs bg-slate-50 h-24 resize-none" value={billObs} onChange={e=>setBillObs(e.target.value)} />
                                 
-                                <button onClick={generateInvoicePDF} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2 mt-6"><i data-lucide="file-text"></i> GENERAR PDF</button>
+                                {/* BOTONES DIVIDIDOS */}
+                                <div className="grid grid-cols-2 gap-2 mt-6">
+                                    <button onClick={() => generateDocument(true)} className="bg-yellow-500 text-white py-4 rounded-xl font-bold flex justify-center gap-2 hover:bg-yellow-600 transition shadow-lg text-[10px] md:text-xs">
+                                        <i data-lucide="file-question"></i> COTIZAR
+                                    </button>
+                                    <button onClick={() => generateDocument(false)} className="bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center gap-2 hover:bg-slate-800 transition shadow-lg text-[10px] md:text-xs">
+                                        <i data-lucide="check-circle"></i> VENDER
+                                    </button>
+                                </div>
                             </div>
                             
                             <div className="admin-card flex flex-col h-full min-h-[300px]">
@@ -355,15 +381,10 @@
                                     ))}
                                 </div>
                                 <div className="mt-auto pt-4 border-t-2 border-dashed font-tech font-black text-xl italic uppercase">
-                                    <div className="flex justify-between"><span>Total Trabajo:</span><span className="text-blue-600">${billItems.reduce((a,b)=>a+b.price,0).toLocaleString()}</span></div>
+                                    <div className="flex justify-between"><span>Total:</span><span className="text-blue-600">${billItems.reduce((a,b)=>a+b.price,0).toLocaleString()}</span></div>
                                     {billDeposit && (
-                                        <div className="text-base text-orange-500 flex justify-between mt-1">
+                                        <div className="text-base text-orange-500 flex justify-between mt-1 animate-pulse">
                                             <span>Abono:</span><span>- ${parseInt(billDeposit).toLocaleString()}</span>
-                                        </div>
-                                    )}
-                                    {billDeposit && (
-                                        <div className="flex justify-between mt-2 pt-2 border-t border-slate-200 text-red-600 animate-pulse">
-                                            <span>SALDO:</span><span>${(billItems.reduce((a,b)=>a+b.price,0) - parseInt(billDeposit)).toLocaleString()}</span>
                                         </div>
                                     )}
                                 </div>
