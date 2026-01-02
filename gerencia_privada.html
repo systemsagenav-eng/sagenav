@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - System.Sagenav</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="manifest" href="manifest_admin.json">
+    <link rel="icon" type="image/png" href="icon.png">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Inter:wght@300;400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; overflow-x: hidden; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+        .admin-card { background: white; border-radius: 1rem; padding: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        .login-screen { background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
+        .chart-container { position: relative; height: 250px; width: 100%; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- LLAVES DE SUPABASE ---
+        const SB_URL = 'https://hzvqpoboonpqnyvpvrdj.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6dnFwb2Jvb25wcW55dnB2cmRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDA0NjYsImV4cCI6MjA4MjExNjQ2Nn0.9JmSj7mDPXR81avoYEGmKXjCMPwktmk6PMIFQyS2XMc';
+        const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
+
+        function AdminApp() {
+            const [authorized, setAuthorized] = useState(false);
+            const [passInput, setPassInput] = useState("");
+            const [adminTab, setAdminTab] = useState('billing');
+            
+            const [settings, setSettings] = useState({ 
+                heroTitle: "SYSTEM.SAGENAV", footerText: "", whatsapp: "", 
+                categories: ["Servicios", "Productos"], personalName: "", 
+                personalId: "", personalAddress: "", publicEmail: "",
+                socialInsta: "", socialFb: "", socialTiktok: "",
+                bgImages: [], personalLogo: null, navLogo: null 
+            });
+            const [inventory, setInventory] = useState([]);
+            const [sales, setSales] = useState([]);
+            const [expenses, setExpenses] = useState([]);
+
+            // ESTADOS EDICION Y CATEGORIAS
+            const [editingId, setEditingId] = useState(null);
+            const [newCat, setNewCat] = useState("");
+
+            const [newItem, setNewItem] = useState({ name: "", description: "", price: "", cost: "", stock: 1, category: "Servicios", onDemand: false, img: "" });
+            const [billClient, setBillClient] = useState({ name: "", nit: "", date: new Date().toISOString().split('T')[0] });
+            const [billItems, setBillItems] = useState([]);
+            const [billDeposit, setBillDeposit] = useState("");
+            const [billObs, setBillObs] = useState(""); 
+            const [newExpense, setNewExpense] = useState({ concept: "", amount: "", date: new Date().toISOString().split('T')[0] });
+
+            const [repFilter, setRepFilter] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1, day: new Date().getDate() });
+            
+            const monthChartRef = useRef(null);
+            const yearChartRef = useRef(null);
+            const accChartRef = useRef(null);
+            const monthChartInstance = useRef(null);
+            const yearChartInstance = useRef(null);
+            const accChartInstance = useRef(null);
+
+            async function fetchData() {
+                try {
+                    const { data } = await supabaseClient.from('sagenav_data').select('*');
+                    if (data) {
+                        const s = data.find(d => d.key === 'settings')?.value;
+                        const i = data.find(d => d.key === 'inventory')?.value;
+                        const sl = data.find(d => d.key === 'sales')?.value;
+                        const ex = data.find(d => d.key === 'expenses')?.value;
+                        if(s) setSettings(s);
+                        if(i) setInventory(i);
+                        if(sl) setSales(sl);
+                        if(ex) setExpenses(ex);
+                    }
+                } catch(e) { console.error(e); }
+            }
+
+            const handleLogin = () => {
+                if (passInput === "1234") { setAuthorized(true); fetchData(); } 
+                else { alert("Clave Incorrecta."); }
+            };
+
+            const saveEverything = async (overrideInventory = null, overrideSales = null) => {
+                const updates = [{ key: 'settings', value: settings }, { key: 'inventory', value: overrideInventory || inventory }, { key: 'sales', value: overrideSales || sales }, { key: 'expenses', value: expenses }];
+                for (let up of updates) { await supabaseClient.from('sagenav_data').upsert({ key: up.key, value: up.value }); }
+                if (!overrideInventory) alert("✅ NUBE SINCRONIZADA");
+            };
+
+            const handleFile = async (e, type) => {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader(); reader.readAsDataURL(file);
+                reader.onload = (ev) => {
+                    const b64 = ev.target.result;
+                    if (type === 'navLogo') setSettings({...settings, navLogo: b64});
+                    if (type === 'bg') setSettings({...settings, bgImages: [...(settings.bgImages || []), b64]});
+                    if (type === 'prod') setNewItem({...newItem, img: b64});
+                };
+            };
+
+            // LOGICA EDICION
+            const handleSaveItem = () => {
+                if (editingId) {
+                    const updatedInventory = inventory.map(item => item.id === editingId ? { ...newItem, id: editingId } : item);
+                    setInventory(updatedInventory);
+                    saveEverything(updatedInventory, null);
+                    setEditingId(null);
+                    alert("Producto Actualizado Correctamente");
+                } else {
+                    const updatedInventory = [...inventory, { ...newItem, id: Date.now() }];
+                    setInventory(updatedInventory);
+                    saveEverything(updatedInventory, null);
+                }
+                setNewItem({ name: "", description: "", price: "", cost: "", stock: 1, category: "Servicios", onDemand: false, img: "" });
+            };
+
+            const startEdit = (item) => { setNewItem(item); setEditingId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+            const cancelEdit = () => { setEditingId(null); setNewItem({ name: "", description: "", price: "", cost: "", stock: 1, category: "Servicios", onDemand: false, img: "" }); };
+
+            const updateStock = (id, delta) => {
+                const updatedInv = inventory.map(i => i.id === id ? { ...i, stock: Math.max(0, (i.stock || 0) + delta) } : i);
+                setInventory(updatedInv); saveEverything(updatedInv, null);
+            };
+
+            const generateDocument = (isQuote) => {
+                if (billItems.length === 0) return alert("Agrega ítems.");
+                const soldCounts = {}; let totalCostOfGoods = 0;
+                if (!isQuote) { billItems.forEach(item => { if (!item.isManual) { soldCounts[item.id] = (soldCounts[item.id] || 0) + 1; totalCostOfGoods += (parseInt(item.cost) || 0); } }); }
+                const updatedInv = inventory.map(item => soldCounts[item.id] ? { ...item, stock: Math.max(0, (item.stock || 0) - soldCounts[item.id]) } : item);
+                
+                const { jsPDF } = window.jspdf; const doc = new jsPDF();
+                if (settings.navLogo) doc.addImage(settings.navLogo, 'PNG', 15, 10, 25, 25);
+                doc.setFontSize(16).setFont("helvetica", "bold").text(settings.personalName || "SYSTEM.SAGENAV", 45, 18);
+                doc.setFontSize(9).setFont("helvetica", "normal");
+                doc.text(`NIT: ${settings.personalId || 'N/A'}`, 45, 24);
+                doc.text(`Dirección: ${settings.personalAddress || 'N/A'}`, 45, 29);
+                doc.text(`Contacto: ${settings.whatsapp || ''} | ${settings.publicEmail || ''}`, 45, 34);
+
+                const docTitle = isQuote ? "COTIZACIÓN" : "CUENTA DE COBRO";
+                doc.setFontSize(18).setFont("helvetica", "bold").text(docTitle, 140, 20);
+                
+                doc.setDrawColor(200); doc.line(15, 42, 195, 42);
+                doc.setFontSize(10).setFont("helvetica", "bold").text("CLIENTE:", 15, 50);
+                doc.setFont("helvetica", "normal").text(billClient.name.toUpperCase(), 35, 50);
+                doc.setFont("helvetica", "bold").text("NIT/CC:", 120, 50);
+                doc.setFont("helvetica", "normal").text(billClient.nit, 135, 50);
+                doc.setFont("helvetica", "bold").text("FECHA:", 160, 50);
+                doc.setFont("helvetica", "normal").text(billClient.date, 175, 50);
+                doc.line(15, 54, 195, 54);
+
+                const body = billItems.map(i => [1, i.name.toUpperCase(), `$${i.price.toLocaleString()}`, `$${i.price.toLocaleString()}`]);
+                doc.autoTable({ startY: 60, head: [['CANT', 'DESCRIPCIÓN', 'VR. UNIT', 'TOTAL']], body: body, theme: 'grid', headStyles: { fillColor: [30, 41, 59] } });
+                
+                const total = billItems.reduce((a,b)=>a+b.price,0); 
+                const finalY = doc.lastAutoTable.finalY + 10;
+                doc.setFontSize(12).setFont("helvetica", "bold");
+                doc.text(`TOTAL A PAGAR:`, 130, finalY);
+                doc.text(`$${total.toLocaleString()}`, 170, finalY);
+                
+                if(billObs) {
+                    doc.setFontSize(9).setFont("helvetica", "italic");
+                    doc.text(`Observaciones / Garantía:`, 15, finalY + 10);
+                    doc.setFont("helvetica", "normal");
+                    doc.text(billObs, 15, finalY + 16, {maxWidth: 180});
+                }
+                
+                doc.setFontSize(8).setFont("helvetica", "italic").setTextColor(100);
+                doc.text(settings.footerText || "Gracias por su confianza.", 105, 280, {align: "center"});
+
+                doc.save(`${isQuote?'COT':'VTA'}_${billClient.name}.pdf`);
+                
+                if (!isQuote) {
+                    const abono = parseInt(billDeposit) || total;
+                    const newSales = [{ id: Date.now(), date: billClient.date, amount: abono, productCost: totalCostOfGoods, concept: `Venta a ${billClient.name}` }, ...sales];
+                    setInventory(updatedInv); setSales(newSales); saveEverything(updatedInv, newSales); 
+                }
+                setBillItems([]); setBillDeposit(""); setBillObs("");
+            };
+
+            const downloadAccountingPDF = () => {
+                const { jsPDF } = window.jspdf; const doc = new jsPDF();
+                const totalInc = sales.reduce((a,b)=>a+b.amount,0);
+                const totalExp = expenses.reduce((a,b)=>a+b.amount,0);
+                const totalProdCost = sales.reduce((a,b)=>a+(b.productCost||0),0);
+                
+                if (settings.navLogo) doc.addImage(settings.navLogo, 'PNG', 15, 10, 20, 20);
+                doc.setFontSize(16).setFont("helvetica", "bold").text("REPORTE CONTABLE", 105, 20, {align: "center"});
+                doc.setFontSize(10).setFont("helvetica", "normal").text(`Generado: ${new Date().toLocaleDateString()}`, 105, 26, {align: "center"});
+
+                doc.autoTable({ startY: 40, head: [['CONCEPTO', 'VALOR']], body: [['INGRESOS TOTALES (Ventas)', `$${totalInc.toLocaleString()}`],['COSTO MERCANCÍA', `-$${totalProdCost.toLocaleString()}`],['GASTOS OPERATIVOS', `-$${totalExp.toLocaleString()}`],['UTILIDAD NETA', `$${(totalInc - totalProdCost - totalExp).toLocaleString()}`]], theme: 'striped' });
+
+                if(accChartRef.current) {
+                    const imgData = accChartRef.current.toDataURL("image/png", 1.0);
+                    doc.text("Gráfico de Distribución:", 15, doc.lastAutoTable.finalY + 15);
+                    doc.addImage(imgData, 'PNG', 60, doc.lastAutoTable.finalY + 20, 90, 90);
+                }
+                doc.save("Reporte_Contable_Sagenav.pdf");
+            };
+
+            const downloadReportPDF = () => {
+                const { jsPDF } = window.jspdf; const doc = new jsPDF();
+                const y = repFilter.year; const m = repFilter.month; const d = repFilter.day;
+                
+                if (settings.navLogo) doc.addImage(settings.navLogo, 'PNG', 15, 10, 20, 20);
+                doc.setFontSize(16).setFont("helvetica", "bold").text(`INFORME DE VENTAS`, 105, 20, {align: "center"});
+                doc.setFontSize(10).setFont("helvetica", "normal").text(`Periodo: ${d}/${m}/${y}`, 105, 26, {align: "center"});
+
+                doc.autoTable({ startY: 40, head: [['PERIODO', 'TOTAL VENDIDO']], body: [[`DÍA`, `$${getSalesTotal('day').toLocaleString()}`],[`MES`, `$${getSalesTotal('month').toLocaleString()}`],[`AÑO`, `$${getSalesTotal('year').toLocaleString()}`]] });
+                let finalY = doc.lastAutoTable.finalY + 10;
+
+                if(monthChartRef.current) {
+                    doc.text("Comportamiento Mensual:", 15, finalY);
+                    const imgMonth = monthChartRef.current.toDataURL("image/png", 1.0);
+                    doc.addImage(imgMonth, 'PNG', 15, finalY + 5, 180, 80);
+                    finalY += 95;
+                }
+                
+                if(yearChartRef.current) {
+                    if (finalY > 200) { doc.addPage(); finalY = 20; }
+                    doc.text("Comportamiento Anual:", 15, finalY);
+                    const imgYear = yearChartRef.current.toDataURL("image/png", 1.0);
+                    doc.addImage(imgYear, 'PNG', 15, finalY + 5, 180, 80);
+                }
+                doc.save(`Reporte_Ventas_${d}_${m}_${y}.pdf`);
+            };
+
+            useEffect(() => {
+                if (authorized) {
+                    lucide.createIcons();
+                    if (adminTab === 'reports' && monthChartRef.current && yearChartRef.current) {
+                        const y = repFilter.year.toString(); const m = repFilter.month.toString().padStart(2, '0');
+                        const days = new Date(repFilter.year, repFilter.month, 0).getDate();
+                        const dLabels = Array.from({length: days}, (_, i) => i + 1);
+                        const dData = dLabels.map(d => sales.filter(s => s.date === `${y}-${m}-${d.toString().padStart(2, '0')}`).reduce((a,b)=>a+b.amount,0));
+                        if(monthChartInstance.current) monthChartInstance.current.destroy();
+                        monthChartInstance.current = new Chart(monthChartRef.current, { type: 'line', data: { labels: dLabels, datasets: [{ label: 'Ventas Mes', data: dData, borderColor: '#3b82f6', tension: 0.3, fill: true, backgroundColor: 'rgba(59, 130, 246, 0.1)' }] }, options: { maintainAspectRatio: false } });
+                        const mLabels = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+                        const mData = mLabels.map((_, i) => sales.filter(s => s.date.startsWith(`${y}-${(i+1).toString().padStart(2, '0')}`)).reduce((a,b)=>a+b.amount,0));
+                        if(yearChartInstance.current) yearChartInstance.current.destroy();
+                        yearChartInstance.current = new Chart(yearChartRef.current, { type: 'bar', data: { labels: mLabels, datasets: [{ label: 'Ventas Año', data: mData, backgroundColor: '#10b981' }] }, options: { maintainAspectRatio: false } });
+                    }
+                    if (adminTab === 'accounting' && accChartRef.current) {
+                        const tInc = sales.reduce((a,b)=>a+b.amount,0);
+                        const tExp = expenses.reduce((a,b)=>a+b.amount,0);
+                        const tCost = sales.reduce((a,b)=>a+(b.productCost||0),0);
+                        if(accChartInstance.current) accChartInstance.current.destroy();
+                        accChartInstance.current = new Chart(accChartRef.current, { type: 'doughnut', data: { labels: ['Ventas','Costos','Gastos'], datasets: [{ data: [tInc, tCost, tExp], backgroundColor: ['#10b981','#f59e0b','#ef4444'] }] }, options: { maintainAspectRatio: false } });
+                    }
+                }
+            }, [adminTab, sales, authorized, repFilter]);
+
+            const getSalesTotal = (period) => {
+                const y = repFilter.year.toString(); const m = repFilter.month.toString().padStart(2, '0'); const d = repFilter.day.toString().padStart(2, '0');
+                return sales.filter(s => {
+                    if(period==='day') return s.date === `${y}-${m}-${d}`;
+                    if(period==='month') return s.date.startsWith(`${y}-${m}`);
+                    if(period==='year') return s.date.startsWith(`${y}`);
+                }).reduce((a,b)=>a+b.amount,0);
+            };
+
+            const totalIncome = sales.reduce((a,b)=>a+b.amount,0);
+            const totalProductCost = sales.reduce((a,b)=>a+(b.productCost||0),0);
+            const totalExpenses = expenses.reduce((a,b)=>a+b.amount,0);
+            const netProfit = totalIncome - totalProductCost - totalExpenses;
+
+            if (!authorized) return (
+                <div className="h-screen w-full flex flex-col items-center justify-center login-screen text-white p-4">
+                    <div className="bg-white/10 backdrop-blur-lg p-10 rounded-3xl border border-white/20 text-center max-w-sm w-full">
+                        <i data-lucide="shield-lock" className="w-16 h-16 mx-auto mb-4 text-blue-400"></i>
+                        <h1 className="text-xl font-tech mb-4 uppercase italic tracking-tighter">ADMIN SYSTEM.SAGENAV</h1>
+                        <input type="password" placeholder="CLAVE" className="w-full p-4 rounded-xl text-center bg-black/50 border border-white/10 text-white mb-4" onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+                        <button onClick={handleLogin} className="w-full bg-blue-600 py-4 rounded-xl font-bold uppercase text-xs">Entrar</button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="p-2 md:p-6 max-w-7xl mx-auto pb-20">
+                    <header className="flex justify-between items-center mb-6 bg-slate-900 p-6 rounded-3xl text-white shadow-xl">
+                        <div className="flex items-center gap-4">
+                            {settings.navLogo && <img src={settings.navLogo} className="w-10 h-10 rounded-full border border-blue-500"/>}
+                            <h1 className="text-lg font-tech italic">System.Sagenav</h1>
+                        </div>
+                        <button onClick={()=>saveEverything()} className="bg-emerald-500 px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-transform active:scale-95"><i data-lucide="cloud"></i> GUARDAR</button>
+                    </header>
+
+                    <nav className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
+                        {[{id:'billing',n:'Facturación'},{id:'inventory',n:'Inventario'},{id:'accounting',n:'Contabilidad'},{id:'reports',n:'Reportes'},{id:'config',n:'Ajustes'}].map(t=>(
+                            <button key={t.id} onClick={()=>setAdminTab(t.id)} className={`px-4 py-2 rounded-lg font-bold text-[10px] uppercase transition-all ${adminTab===t.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-500'}`}>{t.n}</button>
+                        ))}
+                    </nav>
+
+                    {adminTab === 'billing' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
+                            <div className="admin-card space-y-3">
+                                <h3 className="font-bold text-blue-600 text-xs">NUEVA TRANSACCIÓN</h3>
+                                <input placeholder="Cliente" className="w-full p-2 border rounded-lg text-xs" value={billClient.name} onChange={e=>setBillClient({...billClient, name:e.target.value})} />
+                                <input placeholder="NIT" className="w-full p-2 border rounded-lg text-xs" value={billClient.nit} onChange={e=>setBillClient({...billClient, nit:e.target.value})} />
+                                <input type="date" className="w-full p-2 border rounded-lg text-xs" value={billClient.date} onChange={e=>setBillClient({...billClient, date:e.target.value})} />
+                                <select className="w-full p-2 border rounded-lg text-xs font-bold" onChange={e=>{const it=inventory.find(i=>i.id==e.target.value); if(it) setBillItems([...billItems, it])}}><option value="">+ Seleccionar...</option>{inventory.filter(i => (i.stock > 0 || i.onDemand)).map(i=><option key={i.id} value={i.id}>{i.name} (${i.price.toLocaleString()})</option>)}</select>
+                                <textarea placeholder="Observaciones..." className="w-full p-2 border rounded-lg text-xs h-16" value={billObs} onChange={e=>setBillObs(e.target.value)} />
+                                <input placeholder="Abono" type="number" className="w-full p-2 border border-orange-200 rounded-lg text-xs bg-orange-50" value={billDeposit} onChange={e=>setBillDeposit(e.target.value)} />
+                                <div className="grid grid-cols-2 gap-2"><button onClick={()=>generateDocument(true)} className="bg-yellow-500 text-white py-3 rounded-lg font-bold text-xs uppercase">Cotizar</button><button onClick={()=>generateDocument(false)} className="bg-slate-900 text-white py-3 rounded-lg font-bold text-xs uppercase">Vender</button></div>
+                            </div>
+                            <div className="admin-card bg-slate-50 h-full flex flex-col"><h3 className="text-xs font-bold opacity-40 mb-4">DETALLE</h3><div className="flex-grow overflow-y-auto space-y-2 max-h-[250px]">{billItems.map((it, idx)=>(<div key={idx} className="flex justify-between border-b py-2 text-xs"><span>{it.name}</span><b>${it.price.toLocaleString()}</b></div>))}</div><div className="mt-4 pt-4 border-t-2 border-dashed font-tech font-black text-xl text-right text-blue-600">Total: ${billItems.reduce((a,b)=>a+b.price,0).toLocaleString()}</div></div>
+                        </div>
+                    )}
+
+                    {adminTab === 'inventory' && (
+                        <div className="admin-card animate-in fade-in space-y-4">
+                             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                                <input placeholder="Nombre" className="p-2 border rounded-lg text-xs col-span-2 md:col-span-1" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} />
+                                <input placeholder="Precio Venta" type="number" className="p-2 border rounded-lg text-xs" value={newItem.price} onChange={e=>setNewItem({...newItem, price:parseInt(e.target.value)})} />
+                                <input placeholder="Costo Compra" type="number" className="p-2 border border-red-100 rounded-lg text-xs bg-red-50" value={newItem.cost} onChange={e=>setNewItem({...newItem, cost:parseInt(e.target.value)})} />
+                                <input placeholder="Stock" type="number" className="p-2 border rounded-lg text-xs bg-blue-50" value={newItem.stock} onChange={e=>setNewItem({...newItem, stock:parseInt(e.target.value)})} />
+                                <select className="p-2 border rounded-lg text-xs" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})}>{settings.categories?.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <label className="flex items-center gap-2 text-[10px] font-bold uppercase cursor-pointer"><input type="checkbox" checked={newItem.onDemand} onChange={e=>setNewItem({...newItem, onDemand: e.target.checked})} /> Solo por encargo</label>
+                                <div className="flex gap-2 items-center">
+                                    <input type="file" onChange={e=>handleFile(e, 'prod')} className="text-[10px]" />
+                                    {editingId ? (
+                                        <div className="flex gap-2">
+                                            <button onClick={handleSaveItem} className="bg-orange-500 text-white px-6 py-2 rounded-xl font-bold text-xs shadow-lg animate-pulse">ACTUALIZAR ÍTEM</button>
+                                            <button onClick={cancelEdit} className="bg-slate-400 text-white px-4 py-2 rounded-xl font-bold text-xs">Cancelar</button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={handleSaveItem} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold text-xs">Agregar</button>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
+                                {inventory.map(i=>(
+                                    <div key={i.id} className="p-2 border rounded-xl bg-white relative group shadow-sm">
+                                        <button onClick={()=>setInventory(inventory.filter(it=>it.id!==i.id))} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100 transition z-10">×</button>
+                                        <button onClick={()=>startEdit(i)} className="absolute -top-1 right-6 bg-yellow-400 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow opacity-0 group-hover:opacity-100 transition z-10">✏️</button>
+                                        <p className="font-bold text-[10px] uppercase truncate">{i.name}</p>
+                                        <div className="flex justify-between items-center mt-2">
+                                            <div><p className="text-blue-600 font-black text-[9px]">V: ${i.price?.toLocaleString()}</p><p className="text-red-400 font-bold text-[8px]">C: ${i.cost?.toLocaleString()}</p></div>
+                                            <div className="flex items-center gap-1 bg-slate-100 rounded px-1 text-[10px]"><button onClick={()=>updateStock(i.id,-1)} className="text-red-500">-</button><span>{i.stock||0}</span><button onClick={()=>updateStock(i.id,1)} className="text-blue-500">+</button></div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {adminTab === 'accounting' && (
+                        <div className="space-y-6 animate-in fade-in">
+                            <div className="flex justify-between items-center"><h3 className="font-bold text-xs uppercase opacity-50">Balance General</h3><button onClick={downloadAccountingPDF} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase flex items-center gap-2"><i data-lucide="download" className="w-3 h-3"></i> PDF Contable</button></div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="bg-white p-4 rounded-xl border"><p className="text-[8px] font-bold opacity-50">Ingresos (Ventas)</p><h2 className="text-xl font-black text-emerald-600">${totalIncome.toLocaleString()}</h2></div>
+                                <div className="bg-white p-4 rounded-xl border border-orange-100 bg-orange-50"><p className="text-[8px] font-bold opacity-50 text-orange-800">Costo Mercancía</p><h2 className="text-xl font-black text-orange-600">-${totalProductCost.toLocaleString()}</h2></div>
+                                <div className="bg-white p-4 rounded-xl border"><p className="text-[8px] font-bold opacity-50">Gastos Operativos</p><h2 className="text-xl font-black text-red-600">-${totalExpenses.toLocaleString()}</h2></div>
+                                <div className="bg-slate-900 p-4 rounded-xl border-2 border-blue-500"><p className="text-[8px] font-bold text-white opacity-50">UTILIDAD NETA</p><h2 className="text-xl font-black text-white">${netProfit.toLocaleString()}</h2></div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-white p-2 rounded-xl border flex items-center justify-center chart-container"><canvas ref={accChartRef}></canvas></div>
+                                <div className="space-y-4">
+                                    <div className="admin-card space-y-2"><h3 className="font-bold text-red-500 text-xs">REGISTRAR GASTO</h3><div className="flex gap-2"><input placeholder="Concepto" className="flex-grow p-2 border rounded-lg text-xs" value={newExpense.concept} onChange={e=>setNewExpense({...newExpense, concept:e.target.value})} /><input placeholder="$" type="number" className="w-24 p-2 border rounded-lg text-xs" value={newExpense.amount} onChange={e=>setNewExpense({...newExpense, amount:parseInt(e.target.value)})} /><button onClick={()=>{if(newExpense.concept){setExpenses([{id:Date.now(), ...newExpense, date:new Date().toISOString().split('T')[0]}, ...expenses]); setNewExpense({concept:"", amount:"", date:""})}}} className="bg-red-500 text-white px-4 rounded-lg font-bold">OK</button></div></div>
+                                    <div className="admin-card space-y-2 max-h-40 overflow-y-auto"><h3 className="font-bold text-emerald-600 text-xs uppercase">Historial Ventas</h3>{sales.slice(0,5).map(s=>(<div key={s.id} className="flex justify-between text-[10px] border-b pb-1"><span>{s.concept}</span><b>+${s.amount?.toLocaleString()}</b></div>))}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {adminTab === 'reports' && (
+                        <div className="animate-in fade-in space-y-6">
+                            <div className="bg-white p-4 rounded-2xl border flex flex-wrap gap-4 items-center">
+                                <div className="flex items-center gap-2"><label className="text-[10px] font-bold">AÑO:</label><input type="number" className="p-2 border rounded-lg w-20 text-xs" value={repFilter.year} onChange={e=>setRepFilter({...repFilter, year: parseInt(e.target.value)})} /></div>
+                                <div className="flex items-center gap-2"><label className="text-[10px] font-bold">MES:</label><input type="number" className="p-2 border rounded-lg w-16 text-xs" value={repFilter.month} onChange={e=>setRepFilter({...repFilter, month: parseInt(e.target.value)})} /></div>
+                                <div className="flex items-center gap-2"><label className="text-[10px] font-bold">DÍA:</label><input type="number" className="p-2 border rounded-lg w-16 text-xs" value={repFilter.day} onChange={e=>setRepFilter({...repFilter, day: parseInt(e.target.value)})} /></div>
+                                <button onClick={downloadReportPDF} className="ml-auto bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase flex items-center gap-2"><i data-lucide="download" className="w-3 h-3"></i> Reporte PDF</button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-blue-600 text-white p-4 rounded-2xl relative overflow-hidden"><p className="text-[8px] font-black uppercase opacity-60">Día</p><h3 className="text-2xl font-tech">${getSalesTotal('day').toLocaleString()}</h3><i data-lucide="sun" className="absolute -bottom-4 -right-4 w-16 h-16 opacity-20"></i></div>
+                                <div className="bg-white p-4 rounded-2xl border relative overflow-hidden"><p className="text-[8px] font-black uppercase opacity-40">Mes</p><h3 className="text-2xl font-tech text-slate-800">${getSalesTotal('month').toLocaleString()}</h3><i data-lucide="calendar" className="absolute -bottom-4 -right-4 w-16 h-16 opacity-5"></i></div>
+                                <div className="bg-slate-900 text-white p-4 rounded-2xl relative overflow-hidden"><p className="text-[8px] font-black uppercase opacity-60">Año</p><h3 className="text-2xl font-tech text-emerald-400">${getSalesTotal('year').toLocaleString()}</h3><i data-lucide="trending-up" className="absolute -bottom-4 -right-4 w-16 h-16 opacity-20"></i></div>
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                <div className="lg:col-span-2 space-y-4">
+                                    <div className="admin-card chart-container"><canvas ref={monthChartRef}></canvas></div>
+                                    <div className="admin-card chart-container"><canvas ref={yearChartRef}></canvas></div>
+                                </div>
+                                <div className="admin-card bg-slate-50 border-slate-200 overflow-hidden flex flex-col max-h-[420px]">
+                                    <h3 className="text-xs uppercase font-bold opacity-40 mb-4">Detalle {repFilter.day}/{repFilter.month}</h3>
+                                    <div className="flex-grow overflow-y-auto space-y-2 pr-2">
+                                        {sales.filter(s => s.date === `${repFilter.year}-${repFilter.month.toString().padStart(2, '0')}-${repFilter.day.toString().padStart(2, '0')}`).map(s => (
+                                            <div key={s.id} className="bg-white p-3 rounded-lg border text-[10px] shadow-sm"><b>{s.concept}</b><p className="text-emerald-600 font-bold">${s.amount.toLocaleString()}</p></div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {adminTab === 'config' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in pb-20">
+                            <div className="admin-card space-y-3">
+                                <h3 className="font-bold text-blue-600 text-xs">DATOS EMPRESA</h3>
+                                <input placeholder="Nombre" className="w-full p-2 border rounded-lg text-xs" value={settings.personalName} onChange={e=>setSettings({...settings, personalName:e.target.value})} />
+                                <input placeholder="NIT" className="w-full p-2 border rounded-lg text-xs" value={settings.personalId} onChange={e=>setSettings({...settings, personalId:e.target.value})} />
+                                <input placeholder="WhatsApp" className="w-full p-2 border rounded-lg text-xs" value={settings.whatsapp} onChange={e=>setSettings({...settings, whatsapp:e.target.value})} />
+                                <input placeholder="Facebook" className="w-full p-2 border rounded-lg text-xs" value={settings.socialFb} onChange={e=>setSettings({...settings, socialFb:e.target.value})} />
+                                <input placeholder="Instagram" className="w-full p-2 border rounded-lg text-xs" value={settings.socialInsta} onChange={e=>setSettings({...settings, socialInsta:e.target.value})} />
+                                <input placeholder="TikTok" className="w-full p-2 border rounded-lg text-xs" value={settings.socialTiktok} onChange={e=>setSettings({...settings, socialTiktok:e.target.value})} />
+                                <input placeholder="Dirección" className="w-full p-2 border rounded-lg text-xs" value={settings.personalAddress} onChange={e=>setSettings({...settings, personalAddress:e.target.value})} />
+                                <input placeholder="Email Público" className="w-full p-2 border rounded-lg text-xs" value={settings.publicEmail} onChange={e=>setSettings({...settings, publicEmail:e.target.value})} />
+                            </div>
+                            <div className="admin-card space-y-3">
+                                {/* GESTOR DE CATEGORÍAS */}
+                                <h3 className="font-bold text-blue-600 text-xs">CATEGORÍAS</h3>
+                                <div className="flex gap-2">
+                                    <input placeholder="Nueva Categoría..." className="flex-grow p-2 border rounded-lg text-xs" value={newCat} onChange={e=>setNewCat(e.target.value)} />
+                                    <button onClick={()=>{ if(newCat){ setSettings({...settings, categories: [...(settings.categories||[]), newCat]}); setNewCat(""); } }} className="bg-blue-600 text-white px-3 rounded-lg font-bold">+</button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {settings.categories?.map((c,i) => (
+                                        <span key={i} className="bg-slate-100 px-2 py-1 rounded text-[10px] flex items-center gap-2">
+                                            {c} <button onClick={()=>setSettings({...settings, categories: settings.categories.filter((_,idx)=>idx!==i)})} className="text-red-500 font-bold">×</button>
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="border-t pt-4 mt-2">
+                                    <h3 className="font-bold text-blue-600 text-xs mb-2">CARRUSEL & LOGO</h3>
+                                    <div className="border border-dashed p-4 rounded-lg text-center relative hover:bg-slate-50 cursor-pointer">
+                                        <input type="file" onChange={e=>handleFile(e, 'navLogo')} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                        <p className="text-[10px] font-bold text-slate-400">Cambiar Logo (Aparecerá en PDF)</p>
+                                    </div>
+                                    <div className="mt-2">
+                                        <p className="text-[10px] font-bold opacity-40 mb-2">Imágenes Carrusel Web</p>
+                                        <input type="file" onChange={e=>handleFile(e, 'bg')} className="text-[10px] mb-2" />
+                                        <div className="flex gap-2 overflow-x-auto pb-2">{settings.bgImages?.map((img, i) => (<div key={i} className="relative flex-shrink-0"><img src={img} className="w-10 h-10 rounded object-cover border" /><button onClick={()=>setSettings({...settings, bgImages: settings.bgImages.filter((_,idx)=>idx!==i)})} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[8px]">×</button></div>))}</div>
+                                    </div>
+                                </div>
+                                <textarea placeholder="Footer Web..." className="w-full p-2 border rounded-lg h-20 text-xs mt-2" value={settings.footerText} onChange={e=>setSettings({...settings, footerText:e.target.value})} />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AdminApp />);
+    </script>
+</body>
+</html>
